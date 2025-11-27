@@ -33,6 +33,7 @@ jobs:
     
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tags: ${{ steps.meta.outputs.tags }}
     
     steps:
       - name: 检出代码
@@ -42,12 +43,14 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" == "release" ]; then
-            echo "version=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+            VERSION="${{ github.event.release.tag_name }}"
           elif [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            VERSION="${{ github.event.inputs.version }}"
           else
-            echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            VERSION="$(git rev-parse --short HEAD)"
           fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 构建版本: ${VERSION}"
       
       - name: 设置 QEMU
         uses: docker/setup-qemu-action@v3
@@ -75,6 +78,7 @@ jobs:
             type=sha,format=short
       
       - name: 构建并推送镜像
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -84,8 +88,89 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: CRM_VERSION=${{ steps.version.outputs.version }}
-          # 禁用缓存以确保使用最新的 Dockerfile
           no-cache: true
+      
+      # ============================================================
+      # 构建完成后显示镜像信息
+      # ============================================================
+      - name: 📋 显示构建结果
+        run: |
+          echo ""
+          echo "=============================================="
+          echo "🎉 Docker 镜像构建成功！"
+          echo "=============================================="
+          echo ""
+          echo "📦 镜像版本: ${{ steps.version.outputs.version }}"
+          echo "🏷️  镜像标签:"
+          echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n' | while read tag; do
+            echo "   • ${tag}"
+          done
+          echo ""
+          echo "🔗 镜像仓库: https://github.com/${{ github.repository }}/pkgs/container/$(echo ${{ github.repository }} | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]')"
+          echo ""
+          echo "📥 快速拉取命令:"
+          echo "   docker pull ${{ env.IMAGE_REPO }}:latest"
+          echo "   docker pull ${{ env.IMAGE_REPO }}:${{ steps.version.outputs.version }}"
+          echo ""
+          echo "🚀 快速启动命令:"
+          echo "   docker run -d \\"
+          echo "     --name cordys-crm \\"
+          echo "     --restart unless-stopped \\"
+          echo "     -p 8081:8081 \\"
+          echo "     -p 8082:8082 \\"
+          echo "     -v ~/cordys:/opt/cordys \\"
+          echo "     ${{ env.IMAGE_REPO }}:latest"
+          echo ""
+          echo "=============================================="
+      
+      - name: 📝 生成 Job Summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # 🐳 Docker 镜像构建成功
+          
+          ## 📦 镜像信息
+          
+          | 属性 | 值 |
+          |------|-----|
+          | **版本** | \`${{ steps.version.outputs.version }}\` |
+          | **仓库** | [\`${{ env.IMAGE_REPO }}\`](https://github.com/${{ github.repository }}/pkgs/container/$(echo ${{ github.repository }} | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]')) |
+          | **平台** | \`linux/amd64\`, \`linux/arm64\` |
+          | **构建时间** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+          
+          ## 🏷️ 镜像标签
+          
+          \`\`\`
+          ${{ steps.meta.outputs.tags }}
+          \`\`\`
+          
+          ## 📥 快速拉取
+          
+          \`\`\`bash
+          # 拉取最新版本
+          docker pull ${{ env.IMAGE_REPO }}:latest
+          
+          # 拉取指定版本
+          docker pull ${{ env.IMAGE_REPO }}:${{ steps.version.outputs.version }}
+          \`\`\`
+          
+          ## 🚀 快速启动
+          
+          \`\`\`bash
+          docker run -d \\
+            --name cordys-crm \\
+            --restart unless-stopped \\
+            -p 8081:8081 \\
+            -p 8082:8082 \\
+            -v ~/cordys:/opt/cordys \\
+            ${{ env.IMAGE_REPO }}:latest
+          \`\`\`
+          
+          ## 🔗 相关链接
+          
+          - [镜像仓库](https://github.com/${{ github.repository }}/pkgs/container/$(echo ${{ github.repository }} | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]'))
+          - [部署文档](https://github.com/${{ github.repository }}/blob/main/DEPLOYMENT.md)
+          - [Docker 配置](https://github.com/${{ github.repository }}/tree/main/docker)
+          EOF
 
   # Release 时创建离线安装包
   release:
@@ -133,3 +218,16 @@ jobs:
           files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 📝 生成 Release Summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # 📦 离线安装包已创建
+          
+          | 文件 | 平台 |
+          |------|------|
+          | \`cordys-crm-${{ needs.build.outputs.version }}-amd64.tar.gz\` | linux/amd64 |
+          | \`cordys-crm-${{ needs.build.outputs.version }}-arm64.tar.gz\` | linux/arm64 |
+          
+          已上传到 [Release 页面](https://github.com/${{ github.repository }}/releases)
+          EOF

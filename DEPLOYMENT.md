@@ -4,6 +4,29 @@
 
 ---
 
+## 🐳 Docker 镜像信息
+
+| 镜像标签 | 地址 | 说明 |
+|---------|------|------|
+| **latest** | `ghcr.io/flydrm/cordyscrm:latest` | 最新稳定版本 |
+| **main** | `ghcr.io/flydrm/cordyscrm:main` | main 分支最新构建 |
+| **版本号** | `ghcr.io/flydrm/cordyscrm:v1.3.2` | 指定版本 |
+| **SHA** | `ghcr.io/flydrm/cordyscrm:<short-sha>` | Git 提交构建 |
+
+> 📦 **镜像仓库**: [GitHub Container Registry](https://github.com/flydrm/CordysCRM/pkgs/container/cordyscrm)
+
+### 快速拉取
+
+```bash
+# 拉取最新版本
+docker pull ghcr.io/flydrm/cordyscrm:latest
+
+# 拉取指定版本
+docker pull ghcr.io/flydrm/cordyscrm:v1.3.2
+```
+
+---
+
 ## 📋 目录
 
 - [系统要求](#系统要求)
@@ -101,7 +124,7 @@ docker run -d \
   -p 8081:8081 \
   -p 8082:8082 \
   -v ~/cordys:/opt/cordys \
-  ghcr.io/1panel-dev/cordyscrm:latest
+  ghcr.io/flydrm/cordyscrm:latest
 
 # 查看启动日志
 docker logs -f cordys-crm
@@ -244,7 +267,7 @@ docker run -d \
   -e REDIS_PASSWORD=your-redis-password \
   -e MCP_ENABLED=true \
   -e CRM_URL=https://crm.example.com \
-  ghcr.io/1panel-dev/cordyscrm:latest
+  ghcr.io/flydrm/cordyscrm:latest
 ```
 
 #### 外部服务要求

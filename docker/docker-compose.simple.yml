@@ -22,7 +22,7 @@ services:
   # 单机模式 - All in One
   # ============================================================
   cordys-crm:
-    image: ghcr.io/1panel-dev/cordyscrm:${CRM_VERSION:-latest}
+    image: ghcr.io/flydrm/cordyscrm:${CRM_VERSION:-latest}
     container_name: cordys-crm
     profiles:
       - default
@@ -120,7 +120,7 @@ services:
   # 分离模式 - Cordys CRM 应用
   # ============================================================
   cordys-app:
-    image: ghcr.io/1panel-dev/cordyscrm:${CRM_VERSION:-latest}
+    image: ghcr.io/flydrm/cordyscrm:${CRM_VERSION:-latest}
     container_name: cordys-app
     profiles:
       - separated

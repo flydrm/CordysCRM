@@ -1,9 +1,9 @@
 <h1 align="center">Cordys CRM</h1>
 <h3 align="center">新一代的开源 AI CRM 系统</h3>
 <p align="center">
-  <a href="https://github.com/1Panel-dev/CordysCRM/releases"><img src="https://img.shields.io/github/v/release/1Panel-dev/CordysCRM" alt="Latest release"></a>
-  <a href="https://github.com/1Panel-dev/CordysCRM"><img src="https://img.shields.io/github/stars/1Panel-dev/CordysCRM?color=%231890FF&style=flat-square" alt="Stars"></a>    
-  <a href="https://hub.docker.com/r/1panel/cordys-crm"><img src="https://img.shields.io/docker/pulls/1panel/cordys-crm?label=downloads" alt="Download"></a><br/>
+  <a href="https://github.com/flydrm/CordysCRM/releases"><img src="https://img.shields.io/github/v/release/flydrm/CordysCRM" alt="Latest release"></a>
+  <a href="https://github.com/flydrm/CordysCRM"><img src="https://img.shields.io/github/stars/flydrm/CordysCRM?color=%231890FF&style=flat-square" alt="Stars"></a>    
+  <a href="https://github.com/flydrm/CordysCRM/pkgs/container/cordyscrm"><img src="https://img.shields.io/badge/ghcr.io-cordyscrm-blue?logo=github" alt="Container"></a><br/>
 </p>
 
 <hr/>
@@ -21,6 +21,16 @@ Cordys [/ˈkɔːrdɪs/] 由“Cord”（连接之绳）与“System”（系统�
 - **AI 加持**：开放 MCP Server，借助 [MaxKB](https://github.com/1Panel-dev/MaxKB) 强大的智能体开发能力，轻松构建智能创建、智能跟进、智能报价等多样化智能体；
 - **BI 加持**：融合 [DataEase](https://github.com/dataease/dataease) 与 [SQLBot](https://github.com/dataease/SQLBot) 的强大能力，实现销售数据可视化呈现、自助分析，以及基于自然语言的智能查询与归因分析。
 
+## 🐳 Docker 镜像
+
+| 镜像地址 | 说明 |
+|---------|------|
+| `ghcr.io/flydrm/cordyscrm:latest` | 最新版本 |
+| `ghcr.io/flydrm/cordyscrm:main` | main 分支构建 |
+| `ghcr.io/flydrm/cordyscrm:<version>` | 指定版本（如 v1.3.2） |
+
+> 📦 镜像托管于 [GitHub Container Registry](https://github.com/flydrm/CordysCRM/pkgs/container/cordyscrm)
+
 ## 快速开始
 
 ### 安装部署
@@ -34,7 +44,7 @@ docker run -d \
   -p 8081:8081 \
   -p 8082:8082 \
   -v ~/cordys:/opt/cordys \
-  1panel/cordys-crm
+  ghcr.io/flydrm/cordyscrm:latest
 ```
 
 你也可以通过 [1Panel 应用商店](https://cordys.cn/docs/installation/1panel_installtion/) 来安装部署 Cordys CRM。

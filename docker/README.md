@@ -2,6 +2,16 @@
 
 本目录包含 Cordys CRM 的 Docker 部署相关文件。
 
+## 🐳 镜像信息
+
+| 标签 | 镜像地址 |
+|------|---------|
+| **最新版** | `ghcr.io/flydrm/cordyscrm:latest` |
+| **main 分支** | `ghcr.io/flydrm/cordyscrm:main` |
+| **指定版本** | `ghcr.io/flydrm/cordyscrm:<version>` |
+
+> 📦 **镜像仓库**: https://github.com/flydrm/CordysCRM/pkgs/container/cordyscrm
+
 ## 📁 目录结构
 
 ```
@@ -102,7 +112,7 @@ docker run -d \
   -p 8081:8081 \
   -p 8082:8082 \
   -v ~/cordys:/opt/cordys \
-  ghcr.io/1panel-dev/cordyscrm:latest
+  ghcr.io/flydrm/cordyscrm:latest
 ```
 
 **访问地址**: http://localhost:8081  

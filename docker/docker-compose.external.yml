@@ -33,7 +33,7 @@ services:
   # Cordys CRM 应用（连接外部 MySQL/Redis）
   # ============================================================
   cordys-crm:
-    image: ghcr.io/1panel-dev/cordyscrm:${CRM_VERSION:-latest}
+    image: ghcr.io/flydrm/cordyscrm:${CRM_VERSION:-latest}
     container_name: cordys-crm
     hostname: cordys-crm
     restart: unless-stopped
