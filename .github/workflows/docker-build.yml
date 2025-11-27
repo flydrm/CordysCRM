@@ -84,8 +84,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: CRM_VERSION=${{ steps.version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # 禁用缓存以确保使用最新的 Dockerfile
+          no-cache: true
 
   # Release 时创建离线安装包
   release:

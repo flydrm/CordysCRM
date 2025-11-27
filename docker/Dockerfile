@@ -49,11 +49,14 @@ COPY mvnw mvnw.cmd pom.xml lombok.config ./
 COPY .mvn .mvn
 COPY backend backend
 
-# 复制前端构建产物
+# 复制 frontend/pom.xml（Maven 需要解析模块结构）
+COPY frontend/pom.xml frontend/pom.xml
+
+# 复制前端构建产物到 Maven 期望的位置
 COPY --from=frontend /frontend/packages/web/dist /build/frontend/packages/web/dist
 COPY --from=frontend /frontend/packages/mobile/dist /build/frontend/packages/mobile/dist
 
-# 构建后端应用
+# 构建后端应用（排除 frontend 模块，因为前端已经单独构建）
 RUN chmod +x mvnw && \
     ./mvnw clean package -DskipTests -pl '!frontend' -Dmaven.repo.local=/root/.m2/repository && \
     mkdir -p backend/app/target/dependency && \
