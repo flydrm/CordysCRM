@@ -20,13 +20,18 @@ LABEL stage="frontend-builder"
 
 WORKDIR /frontend
 
-# 复制前端源码
-COPY frontend /frontend
+# 复制前端源码（包含所有配置文件）
+COPY frontend/package.json frontend/pnpm-workspace.yaml frontend/tsconfig.json ./
+COPY frontend/postcss.config.cjs ./
+COPY frontend/packages ./packages
 
 # 安装依赖并构建
+# 说明：
+#   - 根目录有 package.json 和 pnpm-workspace.yaml
+#   - pnpm install 会自动处理 workspace 中的所有包
+#   - pnpm run build 会递归构建所有包
 RUN npm install -g pnpm && \
-    cd packages && \
-    pnpm install --frozen-lockfile && \
+    pnpm install --no-frozen-lockfile && \
     pnpm run build && \
     echo "Frontend build completed successfully"
 
