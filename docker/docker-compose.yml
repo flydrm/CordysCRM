@@ -32,7 +32,7 @@ services:
   # 方案1：单机模式 - All in One（MySQL/Redis 内置）
   # ============================================================
   cordys-crm:
-    image: 1panel/cordys-crm:${CRM_VERSION:-latest}
+    image: ghcr.io/1panel-dev/cordyscrm:${CRM_VERSION:-latest}
     container_name: cordys-crm
     profiles:
       - default
@@ -132,7 +132,7 @@ services:
   # 方案2：分离模式 - Cordys CRM 应用
   # ============================================================
   cordys-app:
-    image: 1panel/cordys-crm:${CRM_VERSION:-latest}
+    image: ghcr.io/1panel-dev/cordyscrm:${CRM_VERSION:-latest}
     container_name: cordys-app
     profiles:
       - separated

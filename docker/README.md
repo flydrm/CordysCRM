@@ -95,14 +95,14 @@ REDIS_PASSWORD=your-redis-password  # Redis 密码（如有）
 所有服务在同一容器内运行。
 
 ```bash
-# 使用官方镜像一键启动
+# 使用 GitHub Container Registry 镜像一键启动
 docker run -d \
   --name cordys-crm \
   --restart unless-stopped \
   -p 8081:8081 \
   -p 8082:8082 \
   -v ~/cordys:/opt/cordys \
-  1panel/cordys-crm:latest
+  ghcr.io/1panel-dev/cordyscrm:latest
 ```
 
 **访问地址**: http://localhost:8081  

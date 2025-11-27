@@ -101,7 +101,7 @@ docker run -d \
   -p 8081:8081 \
   -p 8082:8082 \
   -v ~/cordys:/opt/cordys \
-  1panel/cordys-crm:latest
+  ghcr.io/1panel-dev/cordyscrm:latest
 
 # 查看启动日志
 docker logs -f cordys-crm
@@ -244,7 +244,7 @@ docker run -d \
   -e REDIS_PASSWORD=your-redis-password \
   -e MCP_ENABLED=true \
   -e CRM_URL=https://crm.example.com \
-  1panel/cordys-crm:latest
+  ghcr.io/1panel-dev/cordyscrm:latest
 ```
 
 #### 外部服务要求
