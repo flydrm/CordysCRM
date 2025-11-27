@@ -1,0 +1,193 @@
+# ============================================================================
+# Cordys CRM - Docker Compose 主配置文件
+# 
+# 部署方案选择指南：
+#   方案1 - 单机模式 (All-in-One)：快速体验/开发测试
+#   方案2 - 分离模式 (Separated)：需要独立管理 MySQL/Redis
+#   方案3 - 外部服务 (External)：使用已有的外部 MySQL/Redis（推荐生产环境）
+#
+# 使用方法：
+#   # 方案1：单机模式（MySQL/Redis 内置在容器中）
+#   docker compose up -d
+#
+#   # 方案2：分离模式（启动独立的 MySQL/Redis 容器）
+#   docker compose --profile separated up -d
+#
+#   # 方案3：外部服务（推荐生产环境）
+#   cp env.external.template .env && vim .env
+#   docker compose -f docker-compose.external.yml up -d
+#
+#   # 方案3 + Traefik 反代（生产最佳实践）
+#   docker compose -f docker-compose.external.yml -f docker-compose.traefik.yml up -d
+#
+# 兼容性说明：
+#   - 基础镜像: eclipse-temurin:21-jre-jammy (Ubuntu 22.04 LTS)
+#   - 与 Debian 10/11/12 系统完全兼容（glibc 运行时）
+#   - 不使用 Alpine 镜像，避免 musl/glibc 兼容性问题
+#   - 不包含 nginx，支持 Traefik 等外部反代
+# ============================================================================
+
+services:
+  # ============================================================
+  # 方案1：单机模式 - All in One（MySQL/Redis 内置）
+  # ============================================================
+  cordys-crm:
+    image: 1panel/cordys-crm:${CRM_VERSION:-latest}
+    container_name: cordys-crm
+    profiles:
+      - default
+      - allinone
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8081}:8081"       # Web 应用端口
+      - "${MCP_PORT:-8082}:8082"       # MCP Server 端口
+    volumes:
+      - cordys-data:/opt/cordys
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1024m}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - cordys-network
+
+  # ============================================================
+  # 方案2：分离模式 - MySQL 数据库
+  # 镜像: mysql:8.0-debian (glibc，与 Debian 系统兼容)
+  # ============================================================
+  mysql:
+    image: mysql:8.0-debian
+    container_name: cordys-mysql
+    profiles:
+      - separated
+      - dev
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./conf/mysql:/etc/mysql/conf.d:ro
+      - ./init/mysql:/docker-entrypoint-initdb.d:ro
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-CordysCRM@mysql}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-cordys-crm}
+      MYSQL_USER: ${MYSQL_USER:-cordys}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CordysCRM@mysql}
+      TZ: ${TZ:-Asia/Shanghai}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --lower_case_table_names=1
+      - --max_connections=1000
+      - --innodb_buffer_pool_size=256M
+    healthcheck:
+      # 安全：使用 TCP 端口检测，不暴露密码
+      test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/127.0.0.1/3306 2>/dev/null && echo 'OK' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - cordys-network
+
+  # ============================================================
+  # 方案2：分离模式 - Redis 缓存
+  # 镜像: redis:7-bookworm (Debian 12，glibc)
+  # ============================================================
+  redis:
+    image: redis:7-bookworm
+    container_name: cordys-redis
+    profiles:
+      - separated
+      - dev
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-CordysCRM@redis}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    healthcheck:
+      # 安全：使用 TCP 端口检测，不暴露密码
+      test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/127.0.0.1/6379 2>/dev/null && echo 'OK' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - cordys-network
+
+  # ============================================================
+  # 方案2：分离模式 - Cordys CRM 应用
+  # ============================================================
+  cordys-app:
+    image: 1panel/cordys-crm:${CRM_VERSION:-latest}
+    container_name: cordys-app
+    profiles:
+      - separated
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8081}:8081"
+      - "${MCP_PORT:-8082}:8082"
+    volumes:
+      - cordys-data:/opt/cordys
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1024m}
+      # MySQL 配置
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-cordys-crm}
+      MYSQL_USERNAME: ${MYSQL_USER:-cordys}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CordysCRM@mysql}
+      # Redis 配置
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-CordysCRM@redis}
+      # MCP 配置
+      MCP_ENABLED: ${MCP_ENABLED:-true}
+      CRM_URL: ${CRM_URL:-http://localhost:8081}
+      # 会话配置
+      SESSION_TIMEOUT: ${SESSION_TIMEOUT:-30d}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - cordys-network
+
+# ============================================================
+# 网络配置
+# ============================================================
+networks:
+  cordys-network:
+    driver: bridge
+
+# ============================================================
+# 数据卷配置
+# ============================================================
+volumes:
+  cordys-data:
+    driver: local
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local

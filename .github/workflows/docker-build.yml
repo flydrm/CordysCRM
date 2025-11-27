@@ -1,0 +1,238 @@
+# ============================================================================
+# Cordys CRM - Docker 镜像构建与发布工作流
+#
+# 触发条件：
+#   - 推送标签 (v*)
+#   - 推送到 main/develop 分支
+#   - 手动触发
+#
+# 功能：
+#   - 多平台构建 (amd64, arm64)
+#   - 自动标签管理
+#   - 推送到 Docker Hub 和 GitHub Container Registry
+# ============================================================================
+
+name: Docker Build and Push
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+  
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '镜像版本标签'
+        required: false
+        default: 'latest'
+      platforms:
+        description: '构建平台 (linux/amd64,linux/arm64)'
+        required: false
+        default: 'linux/amd64,linux/arm64'
+
+env:
+  # 镜像仓库配置
+  DOCKERHUB_REPO: 1panel/cordys-crm
+  GHCR_REPO: ghcr.io/${{ github.repository }}
+  
+  # 构建配置
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # ============================================================
+  # 构建信息准备
+  # ============================================================
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tags: ${{ steps.meta.outputs.tags }}
+      labels: ${{ steps.meta.outputs.labels }}
+      platforms: ${{ steps.platforms.outputs.platforms }}
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        
+      - name: 确定构建平台
+        id: platforms
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "platforms=${{ github.event.inputs.platforms }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
+          else
+            echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Docker 元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.DOCKERHUB_REPO }}
+            ${{ env.GHCR_REPO }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.event.inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=sha,prefix=,suffix=,format=short
+          labels: |
+            org.opencontainers.image.title=Cordys CRM
+            org.opencontainers.image.description=新一代开源 AI CRM 系统
+            org.opencontainers.image.vendor=FIT2CLOUD
+
+  # ============================================================
+  # 构建并推送 Docker 镜像
+  # ============================================================
+  build:
+    runs-on: ubuntu-latest
+    needs: prepare
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 设置 QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+      
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:master
+            network=host
+      
+      - name: 登录 Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: 登录 GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 缓存 Docker 层
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+      
+      - name: 获取版本号
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION=${{ github.sha }}
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+      
+      - name: 构建并推送镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: ${{ needs.prepare.outputs.platforms }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ needs.prepare.outputs.tags }}
+          labels: ${{ needs.prepare.outputs.labels }}
+          build-args: |
+            CRM_VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          provenance: false
+      
+      - name: 移动缓存
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+      
+      - name: 更新 Docker Hub 描述
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.DOCKERHUB_REPO }}
+          readme-filepath: ./README.md
+          short-description: "Cordys CRM - 新一代开源 AI CRM 系统"
+
+  # ============================================================
+  # 安全扫描
+  # ============================================================
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+      
+      - name: 运行 Trivy 漏洞扫描
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.DOCKERHUB_REPO }}:latest'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+      
+      - name: 上传 Trivy 扫描结果
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ============================================================
+  # 发布通知
+  # ============================================================
+  notify:
+    runs-on: ubuntu-latest
+    needs: [build, security-scan]
+    if: always() && github.event_name != 'pull_request'
+    
+    steps:
+      - name: 发送构建结果通知
+        run: |
+          if [ "${{ needs.build.result }}" == "success" ]; then
+            echo "✅ Docker 镜像构建成功"
+            echo "镜像: ${{ env.DOCKERHUB_REPO }}"
+          else
+            echo "❌ Docker 镜像构建失败"
+          fi
+

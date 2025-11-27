@@ -1,0 +1,142 @@
+# ============================================================================
+# Cordys CRM - 外部服务部署配置（方案3）
+# 
+# 适用场景：
+#   - 使用已有的外部 MySQL 和 Redis 服务
+#   - 生产环境部署
+#   - 配合 Traefik 反向代理（不包含 nginx）
+#
+# 前置条件：
+#   - 外部 MySQL 8.0+ 服务已就绪
+#   - 外部 Redis 6.0+ 服务已就绪
+#   - 数据库 cordys-crm 已创建
+#   - 数据库用户已授权
+#
+# 使用方法：
+#   # 方式1：直接暴露端口
+#   cp env.external.template .env
+#   vim .env  # 配置外部服务连接信息
+#   docker compose -f docker-compose.external.yml up -d
+#
+#   # 方式2：配合 Traefik 反代（推荐生产环境）
+#   docker network create traefik-public
+#   docker compose -f docker-compose.external.yml -f docker-compose.traefik.yml up -d
+#
+# 注意事项：
+#   - 此配置不包含 nginx，使用 Traefik 或其他反代
+#   - 基础镜像为 eclipse-temurin:21-jre-jammy (Ubuntu 22.04)
+#   - 与 Debian 10/11/12 系统完全兼容（glibc）
+# ============================================================================
+
+services:
+  # ============================================================
+  # Cordys CRM 应用（连接外部 MySQL/Redis）
+  # ============================================================
+  cordys-crm:
+    image: 1panel/cordys-crm:${CRM_VERSION:-latest}
+    container_name: cordys-crm
+    hostname: cordys-crm
+    restart: unless-stopped
+    
+    # 端口配置（使用 Traefik 时可注释掉）
+    ports:
+      - "${WEB_PORT:-8081}:8081"
+      - "${MCP_PORT:-8082}:8082"
+    
+    volumes:
+      # 持久化数据目录
+      - ${DATA_PATH:-./data}/cordys:/opt/cordys
+    
+    environment:
+      # 时区配置
+      TZ: ${TZ:-Asia/Shanghai}
+      
+      # ========================================
+      # JVM 配置
+      # ========================================
+      JAVA_OPTS: >-
+        -Xms${JVM_XMS:-512m}
+        -Xmx${JVM_XMX:-1024m}
+        -XX:+UseG1GC
+        -XX:MaxGCPauseMillis=200
+        -XX:+HeapDumpOnOutOfMemoryError
+        -XX:HeapDumpPath=/opt/cordys/logs
+        -Djava.security.egd=file:/dev/./urandom
+      
+      # ========================================
+      # MySQL 外部服务配置（必填）
+      # ========================================
+      MYSQL_HOST: ${MYSQL_HOST:?错误: 请设置 MYSQL_HOST 环境变量}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-cordys-crm}
+      MYSQL_USERNAME: ${MYSQL_USERNAME:-cordys}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?错误: 请设置 MYSQL_PASSWORD 环境变量}
+      MYSQL_SSL: ${MYSQL_SSL:-false}
+      MYSQL_POOL_MIN: ${MYSQL_POOL_MIN:-5}
+      MYSQL_POOL_MAX: ${MYSQL_POOL_MAX:-20}
+      
+      # ========================================
+      # Redis 外部服务配置（必填）
+      # ========================================
+      REDIS_HOST: ${REDIS_HOST:?错误: 请设置 REDIS_HOST 环境变量}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      
+      # ========================================
+      # MCP Server 配置
+      # ========================================
+      MCP_ENABLED: ${MCP_ENABLED:-true}
+      CRM_URL: ${CRM_URL:-https://crm.example.com}
+      
+      # ========================================
+      # 会话配置
+      # ========================================
+      SESSION_TIMEOUT: ${SESSION_TIMEOUT:-30d}
+      
+      # ========================================
+      # SQLBot 配置（可选）
+      # ========================================
+      SQLBOT_ENCRYPT: ${SQLBOT_ENCRYPT:-false}
+      SQLBOT_AES_KEY: ${SQLBOT_AES_KEY:-}
+      SQLBOT_AES_IV: ${SQLBOT_AES_IV:-}
+      
+      # ========================================
+      # 日志配置
+      # ========================================
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    
+    # 资源限制（生产环境推荐）
+    deploy:
+      resources:
+        limits:
+          cpus: '${LIMIT_CPU:-4}'
+          memory: ${LIMIT_MEMORY:-4G}
+        reservations:
+          cpus: '${RESERVE_CPU:-1}'
+          memory: ${RESERVE_MEMORY:-1G}
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    
+    # 网络配置
+    networks:
+      - cordys-network
+
+# ============================================================
+# 网络配置
+# ============================================================
+networks:
+  cordys-network:
+    driver: bridge

@@ -1,0 +1,122 @@
+# ============================================================================
+# Cordys CRM - 生产环境 Docker Compose 配置
+# 
+# 特性：
+#   - 高可用配置
+#   - 资源限制
+#   - 日志管理
+#   - 安全加固
+#
+# 使用方法：
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ============================================================================
+
+services:
+  # ============================================================
+  # MySQL - 生产配置
+  # ============================================================
+  mysql:
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./conf/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+      - ./backup/mysql:/backup
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --lower_case_table_names=1
+      - --max_connections=2000
+      - --innodb_buffer_pool_size=1G
+      - --innodb_log_file_size=256M
+      - --slow_query_log=1
+      - --slow_query_log_file=/var/lib/mysql/slow.log
+      - --long_query_time=2
+
+  # ============================================================
+  # Redis - 生产配置
+  # ============================================================
+  redis:
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+
+  # ============================================================
+  # Cordys CRM 应用 - 生产配置
+  # ============================================================
+  cordys-app:
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200m"
+        max-file: "10"
+    environment:
+      - JAVA_OPTS=-Xms2g -Xmx3g -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/cordys/logs
+    volumes:
+      - cordys-data:/opt/cordys
+      - ./logs:/opt/cordys/logs
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+# ============================================================
+# 生产环境额外配置
+# ============================================================
+volumes:
+  mysql-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/data}/cordys/mysql
+  redis-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/data}/cordys/redis
+  cordys-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-/data}/cordys/app
+

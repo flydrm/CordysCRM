@@ -1,0 +1,113 @@
+# ============================================================================
+# Traefik 反向代理 - 独立部署配置
+#
+# 部署 Traefik 后，Cordys CRM 可通过以下方式连接：
+#   cd ../
+#   docker compose -f docker-compose.external.yml -f docker-compose.traefik.yml up -d
+#
+# 前置条件：
+#   1. 确保 80/443 端口未被占用
+#   2. 确保域名已解析到此服务器
+#   3. 创建 traefik-public 网络: docker network create traefik-public
+#
+# Debian 系统安装 Docker:
+#   curl -fsSL https://get.docker.com | sudo sh
+#   sudo usermod -aG docker $USER
+# ============================================================================
+
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: unless-stopped
+    
+    # Traefik 命令行配置
+    command:
+      # API 和 Dashboard
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+      
+      # Docker Provider
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=traefik-public"
+      
+      # 入口点配置
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      
+      # Let's Encrypt 证书配置
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      # 测试环境可以使用 staging server（避免速率限制）
+      # - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+      
+      # 日志配置
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"
+      - "--accesslog=true"
+      - "--accesslog.filepath=/var/log/traefik/access.log"
+    
+    ports:
+      - "80:80"
+      - "443:443"
+    
+    volumes:
+      # Docker socket（只读）
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # 证书存储
+      - traefik-letsencrypt:/letsencrypt
+      # 日志目录
+      - traefik-logs:/var/log/traefik
+    
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    
+    networks:
+      - traefik-public
+    
+    labels:
+      # 启用 Traefik
+      - "traefik.enable=true"
+      
+      # Dashboard 路由（可选，生产环境建议禁用或限制 IP）
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`${TRAEFIK_DASHBOARD_HOST:-traefik.example.com}`)"
+      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+      # Dashboard 基础认证（可选）
+      # - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth"
+      # - "traefik.http.middlewares.traefik-auth.basicauth.users=admin:$$apr1$$..."
+    
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+# ============================================================
+# 网络配置
+# ============================================================
+networks:
+  traefik-public:
+    external: true
+    name: traefik-public
+
+# ============================================================
+# 数据卷配置
+# ============================================================
+volumes:
+  traefik-letsencrypt:
+    driver: local
+  traefik-logs:
+    driver: local
+
