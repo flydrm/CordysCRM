@@ -80,7 +80,7 @@ public class ContractController {
     @RequiresPermissions(PermissionConstants.CONTRACT_READ)
     @Operation(summary = "详情")
     public ContractResponse get(@PathVariable("id") String id) {
-        return contractService.get(id);
+        return contractService.get(id, OrganizationContext.getOrganizationId());
     }
 
 
@@ -103,15 +103,15 @@ public class ContractController {
     }
 
 
-    @GetMapping("/voided/{id}")
+    @PostMapping("/voided/{id}")
     @RequiresPermissions(PermissionConstants.CONTRACT_VOIDED)
     @Operation(summary = "作废")
-    public void voided(@PathVariable("id") String id) {
-        contractService.voidContract(id, SessionUtils.getUserId());
+    public void voided(@Validated @RequestBody ContractVoidRequest request) {
+        contractService.voidContract(request, SessionUtils.getUserId());
     }
 
 
-    @GetMapping("/archived")
+    @PostMapping("/archived")
     @RequiresPermissions(PermissionConstants.CONTRACT_ARCHIVE)
     @Operation(summary = "归档/取消归档")
     public void archived(@Validated @RequestBody ContractArchivedRequest request) {

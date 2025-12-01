@@ -1,5 +1,6 @@
 package cn.cordys.crm.system.controller;
 
+import cn.cordys.common.constants.InternalUserView;
 import cn.cordys.common.constants.PermissionConstants;
 import cn.cordys.common.dto.BaseTreeNode;
 import cn.cordys.common.dto.DeptDataPermissionDTO;
@@ -10,6 +11,9 @@ import cn.cordys.context.OrganizationContext;
 import cn.cordys.crm.clue.dto.request.CluePageRequest;
 import cn.cordys.crm.clue.dto.response.ClueListResponse;
 import cn.cordys.crm.clue.service.ClueService;
+import cn.cordys.crm.contract.dto.request.ContractPageRequest;
+import cn.cordys.crm.contract.dto.response.ContractListResponse;
+import cn.cordys.crm.contract.service.ContractService;
 import cn.cordys.crm.customer.dto.request.CustomerContactPageRequest;
 import cn.cordys.crm.customer.dto.request.CustomerPageRequest;
 import cn.cordys.crm.customer.dto.response.CustomerContactListResponse;
@@ -17,10 +21,16 @@ import cn.cordys.crm.customer.dto.response.CustomerListResponse;
 import cn.cordys.crm.customer.service.CustomerContactService;
 import cn.cordys.crm.customer.service.CustomerService;
 import cn.cordys.crm.opportunity.dto.request.OpportunityPageRequest;
+import cn.cordys.crm.opportunity.dto.request.OpportunityQuotationPageRequest;
 import cn.cordys.crm.opportunity.dto.response.OpportunityListResponse;
+import cn.cordys.crm.opportunity.dto.response.OpportunityQuotationListResponse;
+import cn.cordys.crm.opportunity.service.OpportunityQuotationService;
 import cn.cordys.crm.opportunity.service.OpportunityService;
 import cn.cordys.crm.product.dto.request.ProductPageRequest;
+import cn.cordys.crm.product.dto.request.ProductPricePageRequest;
 import cn.cordys.crm.product.dto.response.ProductListResponse;
+import cn.cordys.crm.product.dto.response.ProductPriceResponse;
+import cn.cordys.crm.product.service.ProductPriceService;
 import cn.cordys.crm.product.service.ProductService;
 import cn.cordys.crm.system.dto.request.FieldRepeatCheckRequest;
 import cn.cordys.crm.system.dto.request.FieldResolveRequest;
@@ -61,7 +71,13 @@ public class ModuleFieldController {
     @Resource
     private OpportunityService opportunityService;
     @Resource
+    private OpportunityQuotationService opportunityQuotationService;
+    @Resource
+    private ContractService contractService;
+    @Resource
     private ProductService productService;
+    @Resource
+    private ProductPriceService productPriceService;
     @Resource
     private DataScopeService dataScopeService;
 
@@ -113,6 +129,24 @@ public class ModuleFieldController {
         return opportunityService.list(request, SessionUtils.getUserId(), OrganizationContext.getOrganizationId(), deptDataPermission);
     }
 
+    @PostMapping("/source/quotation")
+    @Operation(summary = "分页获取报价单")
+    public Pager<List<OpportunityQuotationListResponse>> sourceOpportunityQuotationPage(@Valid @RequestBody OpportunityQuotationPageRequest request) {
+        request.setCombineSearch(request.getCombineSearch().convert());
+        DeptDataPermissionDTO deptDataPermission = dataScopeService.getDeptDataPermission(SessionUtils.getUserId(), OrganizationContext.getOrganizationId(), "ALL",
+                PermissionConstants.OPPORTUNITY_MANAGEMENT_READ);
+        return opportunityQuotationService.list(request, OrganizationContext.getOrganizationId(), SessionUtils.getUserId(), deptDataPermission);
+    }
+
+    @PostMapping("/source/contract")
+    @Operation(summary = "分页获取合同")
+    public Pager<List<ContractListResponse>> sourceContractPage(@Valid @RequestBody ContractPageRequest request) {
+        request.setCombineSearch(request.getCombineSearch().convert());
+        DeptDataPermissionDTO deptDataPermission = dataScopeService.getDeptDataPermission(SessionUtils.getUserId(), OrganizationContext.getOrganizationId(), InternalUserView.ALL.name(),
+                PermissionConstants.CONTRACT_READ);
+        return contractService.list(request, SessionUtils.getUserId(), OrganizationContext.getOrganizationId(), deptDataPermission);
+    }
+
     @PostMapping("/source/product")
     @Operation(summary = "分页获取产品")
     public Pager<List<ProductListResponse>> sourceProductPage(@Valid @RequestBody ProductPageRequest request) {
@@ -120,6 +154,13 @@ public class ModuleFieldController {
         // 数据源接口只展示上架数据
         request.setStatus("1");
         return productService.list(request, OrganizationContext.getOrganizationId());
+    }
+
+    @PostMapping("/source/price")
+    @Operation(summary = "分页获取产品价格表")
+    public Pager<List<ProductPriceResponse>> sourceProductPage(@Valid @RequestBody ProductPricePageRequest request) {
+        request.setCombineSearch(request.getCombineSearch().convert());
+        return productPriceService.list(request, OrganizationContext.getOrganizationId());
     }
 
     @PostMapping("/check/repeat")
@@ -134,9 +175,9 @@ public class ModuleFieldController {
         return moduleFormService.resolveSourceNames(request.getSourceType(), request.getNames());
     }
 
-	@GetMapping("/display/{formKey}")
-	@Operation(summary = "获取表单配置")
-	public ModuleFormConfigDTO getFieldList(@PathVariable String formKey) {
-		return moduleFormService.getSourceDisplayFields(formKey, OrganizationContext.getOrganizationId());
-	}
+    @GetMapping("/display/{formKey}")
+    @Operation(summary = "获取表单配置")
+    public ModuleFormConfigDTO getFieldList(@PathVariable String formKey) {
+        return moduleFormService.getSourceDisplayFields(formKey, OrganizationContext.getOrganizationId());
+    }
 }

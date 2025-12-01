@@ -202,6 +202,7 @@ export default {
   'common.searchByNamePhone': 'Search by name/phone number',
   'common.searchName': 'Search by name',
   'common.archive': 'archive',
+  'common.notArchived': 'Not archived',
   'common.unarchive': 'Unarchive',
   'common.running': 'Running',
   'common.unExecute': 'Pending',
@@ -336,4 +337,5 @@ export default {
   'common.revokeSuccess': 'Revoke success',
   'common.approvedSuccess': 'Approval passed',
   'common.unApprovedSuccess': 'Approval not passed',
+  'common.skipped': 'Skipped',
 };

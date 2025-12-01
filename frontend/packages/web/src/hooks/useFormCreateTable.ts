@@ -2,6 +2,7 @@ import { NImage, NImageGroup, NSwitch } from 'naive-ui';
 import dayjs from 'dayjs';
 
 import { PreviewPictureUrl } from '@lib/shared/api/requrls/system/module';
+import { ArchiveStatusEnum, ContractStatusEnum } from '@lib/shared/enums/contractEnum';
 import { FieldTypeEnum, FormDesignKeyEnum } from '@lib/shared/enums/formDesignEnum';
 import { SpecialColumnEnum, TableKeyEnum } from '@lib/shared/enums/tableEnum';
 import { useI18n } from '@lib/shared/hooks/useI18n';
@@ -19,6 +20,7 @@ import {
 } from '@/components/business/crm-form-create/config';
 import type { FormCreateField } from '@/components/business/crm-form-create/types';
 
+import { contractPaymentPlanStatusOptions, contractStatusOptions } from '@/config/contract';
 import { quotationStatusOptions } from '@/config/opportunity';
 import useFormCreateAdvanceFilter from '@/hooks/useFormCreateAdvanceFilter';
 import useReasonConfig from '@/hooks/useReasonConfig';
@@ -684,10 +686,82 @@ export default async function useFormCreateTable(props: FormCreateTableProps) {
         key: 'amount',
         sortOrder: false,
         sorter: true,
+        ellipsis: {
+          tooltip: true,
+        },
+        render: props.specialRender?.amount,
       },
     ],
-    [FormDesignKeyEnum.CONTRACT]: [], // TODO lmy
-    [FormDesignKeyEnum.CONTRACT_PAYMENT]: [], // TODO lmy
+    [FormDesignKeyEnum.CONTRACT]: [
+      {
+        title: t('org.department'),
+        width: 120,
+        key: 'departmentId',
+        ellipsis: {
+          tooltip: true,
+        },
+        sortOrder: false,
+        sorter: true,
+        render: (row: any) => row.departmentName || '-',
+      },
+      {
+        title: t('contract.status'),
+        width: 120,
+        key: 'status',
+        filterOptions: contractStatusOptions,
+        sortOrder: false,
+        sorter: true,
+        filter: true,
+        render: props.specialRender?.status,
+      },
+      {
+        title: t('contract.voidReason'),
+        width: 120,
+        key: 'voidReason',
+        ellipsis: {
+          tooltip: true,
+        },
+      },
+      {
+        title: t('opportunity.quotation.amount'),
+        width: 120,
+        key: 'amount',
+        sortOrder: false,
+        sorter: true,
+      },
+      {
+        title: t('contract.archivedStatus'),
+        width: 120,
+        key: 'archivedStatus',
+        sortOrder: false,
+        sorter: true,
+        render: (row: any) =>
+          row.archivedStatus === ArchiveStatusEnum.ARCHIVED ? t('common.archive') : t('common.notArchived'),
+      },
+    ],
+    [FormDesignKeyEnum.CONTRACT_PAYMENT]: [
+      {
+        title: t('org.department'),
+        width: 120,
+        key: 'departmentId',
+        ellipsis: {
+          tooltip: true,
+        },
+        sortOrder: false,
+        sorter: true,
+        render: (row: any) => row.departmentName || '-',
+      },
+      {
+        title: t('contract.planStatus'),
+        width: 120,
+        key: 'planStatus',
+        filterOptions: contractPaymentPlanStatusOptions,
+        sortOrder: false,
+        sorter: true,
+        filter: true,
+        render: props.specialRender?.status,
+      },
+    ],
     [FormDesignKeyEnum.PRICE]: [],
   };
   const staticColumns: CrmDataTableColumn[] = [
@@ -791,6 +865,8 @@ export default async function useFormCreateTable(props: FormCreateTableProps) {
             e.type !== FieldTypeEnum.DIVIDER &&
             e.type !== FieldTypeEnum.TEXTAREA &&
             e.type !== FieldTypeEnum.ATTACHMENT &&
+            e.type !== FieldTypeEnum.SUB_PRICE &&
+            e.type !== FieldTypeEnum.SUB_PRODUCT &&
             !(
               e.businessKey === 'owner' &&
               [FormDesignKeyEnum.CLUE_POOL, FormDesignKeyEnum.CUSTOMER_OPEN_SEA].includes(props.formKey)
@@ -899,7 +975,7 @@ export default async function useFormCreateTable(props: FormCreateTableProps) {
             };
           }
 
-          if (field.businessKey === 'customerId') {
+          if (field.businessKey === 'customerId' || field.businessKey === 'contractId') {
             return {
               title: field.name,
               width: 200,
@@ -925,6 +1001,25 @@ export default async function useFormCreateTable(props: FormCreateTableProps) {
                 tooltip: true,
               },
               render: (row: any) => row.opportunityName ?? '-',
+            };
+          }
+
+          if (
+            [FormDesignKeyEnum.OPPORTUNITY_QUOTATION].includes(props.formKey) &&
+            field.businessKey === 'opportunityId'
+          ) {
+            return {
+              title: field.name,
+              width: 200,
+              key: field.businessKey,
+              fieldId: field.id,
+              sortOrder: false,
+              sorter,
+              filedType: field.type,
+              ellipsis: {
+                tooltip: true,
+              },
+              render: props.specialRender?.[field.businessKey],
             };
           }
 

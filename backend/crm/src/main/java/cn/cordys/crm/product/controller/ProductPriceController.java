@@ -12,12 +12,15 @@ import cn.cordys.crm.product.dto.request.ProductPricePageRequest;
 import cn.cordys.crm.product.dto.response.ProductPriceGetResponse;
 import cn.cordys.crm.product.dto.response.ProductPriceResponse;
 import cn.cordys.crm.product.service.ProductPriceService;
+import cn.cordys.crm.system.dto.request.ResourceBatchEditRequest;
 import cn.cordys.crm.system.dto.response.ModuleFormConfigDTO;
 import cn.cordys.crm.system.service.ModuleFormCacheService;
 import cn.cordys.security.SessionUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.constraints.NotEmpty;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -79,6 +82,12 @@ public class ProductPriceController {
         priceService.delete(id);
     }
 
+	@PostMapping("/batch/update")
+	@RequiresPermissions(PermissionConstants.PRICE_UPDATE)
+	@Operation(summary = "批量更新价格表")
+	public void batchUpdate(@Validated @RequestBody ResourceBatchEditRequest request) {
+		priceService.batchUpdate(request, SessionUtils.getUserId(), OrganizationContext.getOrganizationId());
+	}
 
     @PostMapping("/edit/pos")
     @Operation(summary = "拖拽排序")
@@ -86,4 +95,11 @@ public class ProductPriceController {
     public void editPos(@Validated @RequestBody PosRequest request) {
         priceService.editPos(request);
     }
+
+	@GetMapping("/template/download")
+	@RequiresPermissions(PermissionConstants.PRICE_IMPORT)
+	@Operation(summary = "下载导入模板")
+	public void downloadImportTpl(HttpServletResponse response) {
+		priceService.downloadImportTpl(response, OrganizationContext.getOrganizationId());
+	}
 }

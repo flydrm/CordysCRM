@@ -1,6 +1,7 @@
 import { QuotationStatusEnum } from '@lib/shared/enums/opportunityEnum';
 import type { TableQueryParams } from './common';
 import { ModuleField } from '@lib/shared/models/customer';
+import type {  FormDesignConfigDetailParams } from '@lib/shared/models/system/module';
 
 export interface OpportunityItem {
   id: string; // 商机ID
@@ -134,6 +135,7 @@ export interface QuotationItem {
   createUserName: string;
   updateUserName: string;
   moduleFields: ModuleField[]; 
+  products?:any[];
 }
 
 export interface SaveQuotationParams {
@@ -141,6 +143,7 @@ export interface SaveQuotationParams {
   opportunityId: string;
   amount: number;
   moduleFields: ModuleField[]; // 自定义字段
+  moduleFormConfigDTO?: FormDesignConfigDetailParams;
 }
 
 export interface UpdateQuotationParams extends SaveQuotationParams {
@@ -153,9 +156,12 @@ export interface ApproveQuotation {
   name: string;
   opportunityId: string;
   approvalStatus: QuotationStatusEnum;
+  moduleFormConfigDTO?: FormDesignConfigDetailParams;
+  moduleFields: ModuleField[];
+  products: any[];
 }
 
-export interface BatchApproveParams{
+export interface BatchUpdateQuotationStatusParams{
   ids: (string | number)[];
   approvalStatus: QuotationStatusEnum;
 }
@@ -163,7 +169,8 @@ export interface BatchApproveParams{
 export interface BatchOperationResult {
   success: number;
   fail: number;
-  errorMessage?: string;
+  skip?: number;
+  errorMessages?: string;
 }
 
 

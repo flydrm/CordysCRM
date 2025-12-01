@@ -7,6 +7,7 @@ import cn.cordys.aspectj.dto.LogDTO;
 import cn.cordys.common.constants.FormKey;
 import cn.cordys.common.constants.PermissionConstants;
 import cn.cordys.common.domain.BaseModuleFieldValue;
+import cn.cordys.common.dto.DeptDataPermissionDTO;
 import cn.cordys.common.dto.OptionDTO;
 import cn.cordys.common.dto.ResourceTabEnableDTO;
 import cn.cordys.common.dto.RolePermissionDTO;
@@ -22,6 +23,7 @@ import cn.cordys.common.util.JSON;
 import cn.cordys.common.util.Translator;
 import cn.cordys.crm.contract.domain.ContractField;
 import cn.cordys.crm.opportunity.constants.ApprovalState;
+import cn.cordys.crm.opportunity.domain.Opportunity;
 import cn.cordys.crm.opportunity.domain.OpportunityQuotation;
 import cn.cordys.crm.opportunity.domain.OpportunityQuotationApproval;
 import cn.cordys.crm.opportunity.domain.OpportunityQuotationSnapshot;
@@ -35,7 +37,7 @@ import cn.cordys.crm.opportunity.mapper.ExtOpportunityQuotationMapper;
 import cn.cordys.crm.system.constants.NotificationConstants;
 import cn.cordys.crm.system.domain.Attachment;
 import cn.cordys.crm.system.dto.response.BatchAffectReasonResponse;
-import cn.cordys.crm.system.dto.response.BatchAffectResponse;
+import cn.cordys.crm.system.dto.response.BatchAffectSkipResponse;
 import cn.cordys.crm.system.dto.response.ModuleFormConfigDTO;
 import cn.cordys.crm.system.notice.CommonNoticeSendService;
 import cn.cordys.crm.system.service.LogService;
@@ -58,7 +60,11 @@ import org.mybatis.spring.SqlSessionUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(rollbackFor = Exception.class)
@@ -90,6 +96,8 @@ public class OpportunityQuotationService {
     private BaseMapper<ContractField> contractFieldMapper;
     @Resource
     private BaseMapper<OpportunityQuotationApproval> approvalBaseMapper;
+    @Resource
+    private BaseMapper<Opportunity> opportunityBaseMapper;
 
 
     /**
@@ -103,25 +111,34 @@ public class OpportunityQuotationService {
     public OpportunityQuotation add(OpportunityQuotationAddRequest request, String orgId, String userId) {
         List<BaseModuleFieldValue> moduleFields = request.getModuleFields();
         ModuleFormConfigDTO moduleFormConfigDTO = request.getModuleFormConfigDTO();
+        if (CollectionUtils.isEmpty(moduleFields)) {
+            throw new GenericException(Translator.get("opportunity.quotation.field.required"));
+        }
+        if (moduleFormConfigDTO == null) {
+            throw new GenericException(Translator.get("opportunity.quotation.form.config.required"));
+        }
         OpportunityQuotation opportunityQuotation = new OpportunityQuotation();
         opportunityQuotation.setId(IDGenerator.nextStr());
         opportunityQuotation.setOrganizationId(orgId);
         opportunityQuotation.setName(request.getName());
         opportunityQuotation.setApprovalStatus(ApprovalState.APPROVING.toString());
-        opportunityQuotation.setAmount(request.getAmount());
         opportunityQuotation.setOpportunityId(request.getOpportunityId());
         opportunityQuotation.setCreateUser(userId);
         opportunityQuotation.setUpdateUser(userId);
         opportunityQuotation.setCreateTime(System.currentTimeMillis());
         opportunityQuotation.setUpdateTime(System.currentTimeMillis());
+        //计算子产品总金额
+        setAmount(request.getProducts(), opportunityQuotation);
         // 设置子表格字段值
-        request.getModuleFields().add(new BaseModuleFieldValue("products", request.getProducts()));
+        moduleFields.add(new BaseModuleFieldValue("products", request.getProducts()));
+
         opportunityQuotationFieldService.saveModuleField(opportunityQuotation, orgId, userId, moduleFields, false);
         opportunityQuotationMapper.insert(opportunityQuotation);
-        baseService.handleAddLog(opportunityQuotation, moduleFields);
+        baseService.handleAddLogWithSubTable(opportunityQuotation, moduleFields, "products", Translator.get("products_info"));
 
         // 保存表单配置快照
         OpportunityQuotationGetResponse response = getOpportunityQuotationGetResponse(opportunityQuotation, moduleFields, moduleFormConfigDTO);
+
         saveSnapshot(opportunityQuotation, moduleFormConfigDTO, response);
 
         //保存报价单审批表
@@ -129,6 +146,19 @@ public class OpportunityQuotationService {
 
         return opportunityQuotation;
 
+    }
+
+    /**
+     * 计算子产品总金额
+     *
+     * @param products             子产品列表
+     * @param opportunityQuotation 报价单实体
+     */
+    private void setAmount(List<Map<String, Object>> products, OpportunityQuotation opportunityQuotation) {
+        BigDecimal totalAmount = products.stream()
+                .map(product -> new BigDecimal(product.get("amount").toString()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        opportunityQuotation.setAmount(totalAmount.setScale(2, RoundingMode.HALF_UP));
     }
 
     /**
@@ -157,6 +187,10 @@ public class OpportunityQuotationService {
      * @param response             报价单详情响应类
      */
     private void saveSnapshot(OpportunityQuotation opportunityQuotation, ModuleFormConfigDTO moduleFormConfigDTO, OpportunityQuotationGetResponse response) {
+        //移除response中moduleFields 集合里 的 BaseModuleFieldValue 的 fieldId="products"的数据，避免快照数据过大
+        response.setModuleFields(response.getModuleFields().stream()
+                .filter(field -> !"products".equals(field.getFieldId()))
+                .collect(Collectors.toList()));
         OpportunityQuotationSnapshot snapshot = new OpportunityQuotationSnapshot();
         snapshot.setId(IDGenerator.nextStr());
         snapshot.setQuotationId(opportunityQuotation.getId());
@@ -175,9 +209,12 @@ public class OpportunityQuotationService {
      */
     private OpportunityQuotationGetResponse getOpportunityQuotationGetResponse(OpportunityQuotation opportunityQuotation, List<BaseModuleFieldValue> moduleFields, ModuleFormConfigDTO moduleFormConfigDTO) {
         OpportunityQuotationGetResponse response = BeanUtils.copyBean(new OpportunityQuotationGetResponse(), opportunityQuotation);
-		moduleFormService.processBusinessFieldValues(response, moduleFields, moduleFormConfigDTO);
+        moduleFormService.processBusinessFieldValues(response, moduleFields, moduleFormConfigDTO);
+        Opportunity opportunity = opportunityBaseMapper.selectByPrimaryKey(response.getOpportunityId());
         Map<String, List<OptionDTO>> optionMap = moduleFormService.getOptionMap(moduleFormConfigDTO, moduleFields);
+        optionMap.put("opportunityId", List.of(new OptionDTO(opportunity.getId(), opportunity.getName())));
         response.setOptionMap(optionMap);
+        response.setOpportunityName(opportunity.getName());
         Map<String, List<Attachment>> attachmentMap = moduleFormService.getAttachmentMap(moduleFormConfigDTO, moduleFields);
         response.setAttachmentMap(attachmentMap);
         return baseService.setCreateAndUpdateUserName(response);
@@ -412,12 +449,12 @@ public class OpportunityQuotationService {
      * @param organizationId 组织ID
      * @return 商机报价单列表
      */
-    public PagerWithOption<List<OpportunityQuotationListResponse>> list(OpportunityQuotationPageRequest request, String organizationId) {
+    public PagerWithOption<List<OpportunityQuotationListResponse>> list(OpportunityQuotationPageRequest request, String organizationId, String userId, DeptDataPermissionDTO deptDataPermission) {
         Page<Object> page = PageHelper.startPage(request.getCurrent(), request.getPageSize());
-        List<OpportunityQuotationListResponse> list = extOpportunityQuotationMapper.list(request, organizationId);
-		ModuleFormConfigDTO moduleFormConfigDTO = moduleFormCacheService.getBusinessFormConfig(FormKey.QUOTATION.getKey(), organizationId);
-		List<OpportunityQuotationListResponse> results = buildList(list, moduleFormConfigDTO);
+        List<OpportunityQuotationListResponse> list = extOpportunityQuotationMapper.list(request, organizationId, userId, deptDataPermission);
+        List<OpportunityQuotationListResponse> results = buildList(list);
         // 处理自定义字段选项
+        ModuleFormConfigDTO moduleFormConfigDTO = moduleFormCacheService.getBusinessFormConfig(FormKey.QUOTATION.getKey(), organizationId);
         List<BaseModuleFieldValue> moduleFieldValues = moduleFormService.getBaseModuleFieldValues(results, OpportunityQuotationListResponse::getModuleFields);
         Map<String, List<OptionDTO>> optionMap = moduleFormService.getOptionMap(moduleFormConfigDTO, moduleFieldValues);
         return PageUtils.setPageInfoWithOption(page, results, optionMap);
@@ -429,15 +466,12 @@ public class OpportunityQuotationService {
      * @param listData 列表数据
      * @return 列表数据
      */
-    private List<OpportunityQuotationListResponse> buildList(List<OpportunityQuotationListResponse> listData, ModuleFormConfigDTO formConfig) {
+    private List<OpportunityQuotationListResponse> buildList(List<OpportunityQuotationListResponse> listData) {
         // 查询列表数据的自定义字段
         Map<String, List<BaseModuleFieldValue>> dataFieldMap = opportunityQuotationFieldService.getResourceFieldMap(
                 listData.stream().map(OpportunityQuotationListResponse::getId).toList(), true);
         // 列表项设置自定义字段&&用户名
-        listData.forEach(item -> {
-			List<BaseModuleFieldValue> fieldValues = dataFieldMap.get(item.getId());
-			moduleFormService.processBusinessFieldValues(item, fieldValues, formConfig);
-		});
+        listData.forEach(item -> item.setModuleFields(dataFieldMap.get(item.getId())));
         return baseService.setCreateAndUpdateUserName(listData);
     }
 
@@ -453,6 +487,13 @@ public class OpportunityQuotationService {
     public OpportunityQuotation update(OpportunityQuotationEditRequest request, String userId, String orgId) {
         String id = request.getId();
         List<BaseModuleFieldValue> moduleFields = request.getModuleFields();
+        ModuleFormConfigDTO moduleFormConfigDTO = request.getModuleFormConfigDTO();
+        if (CollectionUtils.isEmpty(moduleFields)) {
+            throw new GenericException(Translator.get("opportunity.quotation.field.required"));
+        }
+        if (moduleFormConfigDTO == null) {
+            throw new GenericException(Translator.get("opportunity.quotation.form.config.required"));
+        }
         OpportunityQuotation oldOpportunityQuotation = opportunityQuotationMapper.selectByPrimaryKey(id);
         if (oldOpportunityQuotation == null) {
             throw new GenericException(Translator.get("opportunity.quotation.not.exist"));
@@ -462,10 +503,11 @@ public class OpportunityQuotationService {
         opportunityQuotation.setUpdateTime(System.currentTimeMillis());
         opportunityQuotation.setUpdateUser(userId);
         opportunityQuotation.setApprovalStatus(ApprovalState.APPROVING.toString());
+        setAmount(request.getProducts(), opportunityQuotation);
         // 设置子表格字段值
-        request.getModuleFields().add(new BaseModuleFieldValue("products", request.getProducts()));
+        moduleFields.add(new BaseModuleFieldValue("products", request.getProducts()));
         updateFields(moduleFields, opportunityQuotation, orgId, userId);
-        opportunityQuotationMapper.update(opportunityQuotation);
+        opportunityQuotationMapper.updateById(opportunityQuotation);
 
         //更新报价单审批表
         updateQuotationApproval(userId, id, ApprovalState.APPROVING.toString());
@@ -478,8 +520,8 @@ public class OpportunityQuotationService {
         delWrapper.eq(OpportunityQuotationSnapshot::getQuotationId, id);
         snapshotBaseMapper.deleteByLambda(delWrapper);
         //保存快照
-        OpportunityQuotationGetResponse response = getOpportunityQuotationGetResponse(opportunityQuotation, moduleFields, request.getModuleFormConfigDTO());
-        saveSnapshot(opportunityQuotation, request.getModuleFormConfigDTO(), response);
+        OpportunityQuotationGetResponse response = getOpportunityQuotationGetResponse(opportunityQuotation, moduleFields, moduleFormConfigDTO);
+        saveSnapshot(opportunityQuotation, moduleFormConfigDTO, response);
 
         return opportunityQuotationMapper.selectByPrimaryKey(id);
     }
@@ -512,7 +554,7 @@ public class OpportunityQuotationService {
         quotationApproval.setApprovalStatus(approvalStatus);
         quotationApproval.setUpdateTime(System.currentTimeMillis());
         quotationApproval.setUpdateUser(userId);
-        approvalBaseMapper.update(quotationApproval);
+        approvalBaseMapper.updateById(quotationApproval);
     }
 
     /**
@@ -552,27 +594,41 @@ public class OpportunityQuotationService {
      * @param orgId   组织ID
      * @return 审批状态
      */
-    public BatchAffectResponse batchApprove(OpportunityQuotationBatchRequest request, String userId, String orgId) {
+    public BatchAffectSkipResponse batchApprove(OpportunityQuotationBatchRequest request, String userId, String orgId) {
         List<String> ids = request.getIds();
         String approvalStatus = request.getApprovalStatus();
         LambdaQueryWrapper<OpportunityQuotation> wrapper = new LambdaQueryWrapper<>();
         wrapper.in(OpportunityQuotation::getId, ids);
-        wrapper.eq(OpportunityQuotation::getApprovalStatus, approvalStatus);
+        wrapper.eq(OpportunityQuotation::getApprovalStatus, ApprovalState.APPROVING.toString());
         List<OpportunityQuotation> list = opportunityQuotationMapper.selectListByLambda(wrapper);
         if (CollectionUtils.isEmpty(list)) {
-            return BatchAffectResponse.builder().success(0).fail(0).build();
+            return BatchAffectSkipResponse.builder().success(0).fail(0).skip(0).build();
         }
         SqlSession sqlSession = sqlSessionFactory.openSession(ExecutorType.BATCH);
         ExtOpportunityQuotationMapper batchUpdateMapper = sqlSession.getMapper(ExtOpportunityQuotationMapper.class);
 
         List<LogDTO> logs = new ArrayList<>();
         List<String> approvingIds = new ArrayList<>();
-        list.forEach(item -> {
+        AtomicInteger skipCount = new AtomicInteger(0);
+        list.stream().filter(item -> {
+            if (Strings.CI.equals(item.getApprovalStatus(), ApprovalState.APPROVED.toString())) {
+                skipCount.getAndIncrement();
+                return false;
+            }
+            return true;
+        }).forEach(item -> {
             approvingIds.add(item.getId());
-            LogDTO logDTO = new LogDTO(orgId, item.getId(), userId, LogType.APPROVAL, LogModule.OPPORTUNITY_QUOTATION, item.getName());
-            logDTO.setOriginalValue(item.getApprovalStatus());
-            logDTO.setModifiedValue(approvalStatus);
-            logs.add(logDTO);
+            var log = new LogDTO(
+                    orgId,
+                    item.getId(),
+                    userId,
+                    LogType.APPROVAL,
+                    LogModule.OPPORTUNITY_QUOTATION,
+                    item.getName()
+            );
+            log.setOriginalValue(item.getApprovalStatus());
+            log.setModifiedValue(approvalStatus);
+            logs.add(log);
 
         });
         batchUpdateMapper.batchUpdateApprovalStatus(approvingIds, approvalStatus, userId, System.currentTimeMillis());
@@ -583,7 +639,7 @@ public class OpportunityQuotationService {
                 item -> sendNotice(Translator.get(Strings.CI.equals(approvalStatus, ApprovalState.APPROVED.toString()) ?
                         "opportunity.quotation.status.approved" : "opportunity.quotation.status.unapproved"), item, userId, orgId, NotificationConstants.Event.BUSINESS_QUOTATION_APPROVAL)
         );
-        return BatchAffectResponse.builder().success(list.size()).fail(0).build();
+        return BatchAffectSkipResponse.builder().success(list.size() - skipCount.get()).fail(0).skip(skipCount.get()).build();
     }
 
 
@@ -601,7 +657,7 @@ public class OpportunityQuotationService {
         wrapper.in(OpportunityQuotation::getId, ids);
         List<OpportunityQuotation> list = opportunityQuotationMapper.selectListByLambda(wrapper);
         if (CollectionUtils.isEmpty(list)) {
-            return BatchAffectReasonResponse.builder().success(0).fail(0).errorMessages("opportunity.quotation.not.exist").build();
+            return BatchAffectReasonResponse.builder().success(0).fail(0).skip(0).errorMessages("opportunity.quotation.not.exist").build();
         }
         SqlSession sqlSession = sqlSessionFactory.openSession(ExecutorType.BATCH);
         ExtOpportunityQuotationMapper batchUpdateMapper = sqlSession.getMapper(ExtOpportunityQuotationMapper.class);
@@ -610,17 +666,33 @@ public class OpportunityQuotationService {
         // 校验商机报价单是否可以作废
         List<OpportunityQuotation> successList = validateVoidQuotation(list);
         if (CollectionUtils.isEmpty(successList)) {
-            return BatchAffectReasonResponse.builder().success(0).fail(list.size()).errorMessages("opportunity.quotation.batch.no.voided").build();
+            return BatchAffectReasonResponse.builder().success(0).fail(list.size()).skip(0).errorMessages("opportunity.quotation.batch.no.voided").build();
         }
 
         List<LogDTO> logs = new ArrayList<>();
         List<String> successIds = new ArrayList<>();
-        successList.forEach(item -> {
+        AtomicInteger skipCount = new AtomicInteger();
+        successList.stream().filter(
+                item -> {
+                    if (Strings.CI.equals(item.getApprovalStatus(), LogType.VOIDED)) {
+                        skipCount.getAndIncrement();
+                        return false;
+                    }
+                    return true;
+                }
+        ).forEach(item -> {
             successIds.add(item.getId());
-            LogDTO logDTO = new LogDTO(organizationId, item.getId(), userId, LogType.VOIDED, LogModule.OPPORTUNITY_QUOTATION, item.getName());
-            logDTO.setOriginalValue(item.getApprovalStatus());
-            logDTO.setModifiedValue(LogType.VOIDED);
-            logs.add(logDTO);
+            var log = new LogDTO(
+                    organizationId,
+                    item.getId(),
+                    userId,
+                    LogType.VOIDED,
+                    LogModule.OPPORTUNITY_QUOTATION,
+                    item.getName()
+            );
+            log.setOriginalValue(item.getApprovalStatus());
+            log.setModifiedValue(LogType.VOIDED);
+            logs.add(log);
 
         });
         batchUpdateMapper.batchUpdateApprovalStatus(successIds, LogType.VOIDED, userId, System.currentTimeMillis());
@@ -631,7 +703,7 @@ public class OpportunityQuotationService {
         successList.forEach(
                 item -> sendNotice(Translator.get("opportunity.quotation.status.voided"), item, userId, organizationId, NotificationConstants.Event.BUSINESS_QUOTATION_APPROVAL)
         );
-        return BatchAffectReasonResponse.builder().success(successList.size()).fail(list.size() - successList.size()).errorMessages("opportunity.quotation.batch.no.voided").build();
+        return BatchAffectReasonResponse.builder().success(successList.size() - skipCount.get()).fail(list.size() - successList.size()).skip(skipCount.get()).errorMessages("opportunity.quotation.batch.no.voided").build();
     }
 
 

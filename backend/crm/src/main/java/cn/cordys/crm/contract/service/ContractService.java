@@ -8,10 +8,7 @@ import cn.cordys.common.constants.BusinessModuleField;
 import cn.cordys.common.constants.FormKey;
 import cn.cordys.common.constants.PermissionConstants;
 import cn.cordys.common.domain.BaseModuleFieldValue;
-import cn.cordys.common.dto.DeptDataPermissionDTO;
-import cn.cordys.common.dto.OptionDTO;
-import cn.cordys.common.dto.ResourceTabEnableDTO;
-import cn.cordys.common.dto.RolePermissionDTO;
+import cn.cordys.common.dto.*;
 import cn.cordys.common.exception.GenericException;
 import cn.cordys.common.pager.PageUtils;
 import cn.cordys.common.pager.PagerWithOption;
@@ -26,14 +23,14 @@ import cn.cordys.crm.contract.constants.ArchivedStatus;
 import cn.cordys.crm.contract.constants.ContractStatus;
 import cn.cordys.crm.contract.domain.Contract;
 import cn.cordys.crm.contract.domain.ContractSnapshot;
-import cn.cordys.crm.contract.dto.request.ContractAddRequest;
-import cn.cordys.crm.contract.dto.request.ContractArchivedRequest;
-import cn.cordys.crm.contract.dto.request.ContractPageRequest;
-import cn.cordys.crm.contract.dto.request.ContractUpdateRequest;
+import cn.cordys.crm.contract.dto.request.*;
 import cn.cordys.crm.contract.dto.response.ContractListResponse;
 import cn.cordys.crm.contract.dto.response.ContractResponse;
 import cn.cordys.crm.contract.mapper.ExtContractMapper;
+import cn.cordys.crm.customer.domain.Customer;
+import cn.cordys.crm.product.mapper.ExtProductMapper;
 import cn.cordys.crm.system.domain.Attachment;
+import cn.cordys.crm.system.domain.User;
 import cn.cordys.crm.system.dto.response.ModuleFormConfigDTO;
 import cn.cordys.crm.system.service.ModuleFormCacheService;
 import cn.cordys.crm.system.service.ModuleFormService;
@@ -47,10 +44,11 @@ import org.apache.commons.lang3.Strings;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @Transactional(rollbackFor = Exception.class)
@@ -72,6 +70,12 @@ public class ContractService {
     private ModuleFormCacheService moduleFormCacheService;
     @Resource
     private PermissionCache permissionCache;
+    @Resource
+    private BaseMapper<Customer> customerBaseMapper;
+    @Resource
+    private BaseMapper<User> userBaseMapper;
+    @Resource
+    private ExtProductMapper extProductMapper;
 
     /**
      * 新建合同
@@ -85,12 +89,18 @@ public class ContractService {
     public Contract add(ContractAddRequest request, String operatorId, String orgId) {
         List<BaseModuleFieldValue> moduleFields = request.getModuleFields();
         ModuleFormConfigDTO moduleFormConfigDTO = request.getModuleFormConfigDTO();
+        if (CollectionUtils.isEmpty(moduleFields)) {
+            throw new GenericException(Translator.get("contract.field.required"));
+        }
+        if (moduleFormConfigDTO == null) {
+            throw new GenericException(Translator.get("contract.form.config.required"));
+        }
+
         Contract contract = new Contract();
         String id = IDGenerator.nextStr();
         contract.setId(id);
         contract.setName(request.getName());
         contract.setCustomerId(request.getCustomerId());
-        contract.setAmount(request.getAmount());
         contract.setOwner(request.getOwner());
         //todo number
         contract.setNumber(id);
@@ -102,13 +112,16 @@ public class ContractService {
         contract.setUpdateTime(System.currentTimeMillis());
         contract.setUpdateUser(operatorId);
 
+        //计算子产品总金额
+        setAmount(request.getProducts(), contract);
+
         // 设置子表格字段值
-        request.getModuleFields().add(new BaseModuleFieldValue("products", request.getProducts()));
+        moduleFields.add(new BaseModuleFieldValue("products", request.getProducts()));
         //自定义字段
         contractFieldService.saveModuleField(contract, orgId, operatorId, moduleFields, false);
         contractMapper.insert(contract);
 
-        baseService.handleAddLog(contract, request.getModuleFields());
+        baseService.handleAddLogWithSubTable(contract, moduleFields, "products", Translator.get("products_info"));
 
         // 保存表单配置快照
         ContractResponse response = getContractResponse(contract, moduleFields, moduleFormConfigDTO);
@@ -126,6 +139,10 @@ public class ContractService {
      * @param response
      */
     private void saveSnapshot(Contract contract, ModuleFormConfigDTO moduleFormConfigDTO, ContractResponse response) {
+        //移除response中moduleFields 集合里 的 BaseModuleFieldValue 的 fieldId="products"的数据，避免快照数据过大
+        response.setModuleFields(response.getModuleFields().stream()
+                .filter(field -> !"products".equals(field.getFieldId()))
+                .collect(Collectors.toList()));
         ContractSnapshot snapshot = new ContractSnapshot();
         snapshot.setId(IDGenerator.nextStr());
         snapshot.setContractId(contract.getId());
@@ -146,12 +163,32 @@ public class ContractService {
      */
     private ContractResponse getContractResponse(Contract contract, List<BaseModuleFieldValue> moduleFields, ModuleFormConfigDTO moduleFormConfigDTO) {
         ContractResponse response = BeanUtils.copyBean(new ContractResponse(), contract);
-		moduleFormService.processBusinessFieldValues(response, moduleFields, moduleFormConfigDTO);
+        moduleFormService.processBusinessFieldValues(response, moduleFields, moduleFormConfigDTO);
         Map<String, List<OptionDTO>> optionMap = moduleFormService.getOptionMap(moduleFormConfigDTO, moduleFields);
+        Customer customer = customerBaseMapper.selectByPrimaryKey(contract.getCustomerId());
+        optionMap.put("customerId", Collections.singletonList(new OptionDTO(customer.getId(), customer.getName())));
+        User owner = userBaseMapper.selectByPrimaryKey(contract.getOwner());
+        optionMap.put("owner", Collections.singletonList(new OptionDTO(owner.getId(), owner.getName())));
         response.setOptionMap(optionMap);
+        response.setCustomerName(customer.getName());
+        response.setOwnerName(owner.getName());
         Map<String, List<Attachment>> attachmentMap = moduleFormService.getAttachmentMap(moduleFormConfigDTO, moduleFields);
         response.setAttachmentMap(attachmentMap);
         return baseService.setCreateAndUpdateUserName(response);
+    }
+
+
+    /**
+     * 计算子产品总金额
+     *
+     * @param products 子产品列表
+     * @param contract 合同对象
+     */
+    private void setAmount(List<Map<String, Object>> products, Contract contract) {
+        BigDecimal totalAmount = products.stream()
+                .map(product -> new BigDecimal(product.get("amount").toString()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        contract.setAmount(totalAmount.setScale(2, RoundingMode.HALF_UP));
     }
 
 
@@ -167,6 +204,14 @@ public class ContractService {
     public Contract update(ContractUpdateRequest request, String userId, String orgId) {
         Contract oldContract = contractMapper.selectByPrimaryKey(request.getId());
         List<BaseModuleFieldValue> moduleFields = request.getModuleFields();
+        ModuleFormConfigDTO moduleFormConfigDTO = request.getModuleFormConfigDTO();
+        if (CollectionUtils.isEmpty(moduleFields)) {
+            throw new GenericException(Translator.get("contract.field.required"));
+        }
+        if (moduleFormConfigDTO == null) {
+            throw new GenericException(Translator.get("contract.form.config.required"));
+        }
+
         Optional.ofNullable(oldContract).ifPresentOrElse(item -> {
             if (Strings.CI.equals(oldContract.getArchivedStatus(), ArchivedStatus.ARCHIVED.name())) {
                 throw new GenericException(Translator.get("contract.archived.cannot.edit"));
@@ -178,8 +223,10 @@ public class ContractService {
             Contract contract = BeanUtils.copyBean(new Contract(), request);
             contract.setUpdateTime(System.currentTimeMillis());
             contract.setUpdateUser(userId);
+            //计算子产品总金额
+            setAmount(request.getProducts(), contract);
             // 设置子表格字段值
-            request.getModuleFields().add(new BaseModuleFieldValue("products", request.getProducts()));
+            moduleFields.add(new BaseModuleFieldValue("products", request.getProducts()));
             updateFields(moduleFields, contract, orgId, userId);
             contractMapper.update(contract);
             // 处理日志上下文
@@ -190,8 +237,8 @@ public class ContractService {
             delWrapper.eq(ContractSnapshot::getContractId, request.getId());
             snapshotBaseMapper.deleteByLambda(delWrapper);
             //保存快照
-            ContractResponse response = getContractResponse(contract, moduleFields, request.getModuleFormConfigDTO());
-            saveSnapshot(contract, request.getModuleFormConfigDTO(), response);
+            ContractResponse response = getContractResponse(contract, moduleFields, moduleFormConfigDTO);
+            saveSnapshot(contract, moduleFormConfigDTO, response);
 
 
         }, () -> {
@@ -251,19 +298,41 @@ public class ContractService {
      * @param id
      * @return
      */
-    public ContractResponse get(String id) {
-        ContractResponse response = new ContractResponse();
-        Contract contract = contractMapper.selectByPrimaryKey(id);
-        if (contract == null) {
-            throw new GenericException(Translator.get("contract.not.exist"));
+    public ContractResponse get(String id, String orgId) {
+        ContractResponse response = extContractMapper.getDetail(id);
+        List<BaseModuleFieldValue> fieldValueList = contractFieldService.getModuleFieldValuesByResourceId(id);
+        response.setModuleFields(fieldValueList);
+        List<String> userIds = Stream.of(Arrays.asList(response.getCreateUser(), response.getUpdateUser(), response.getOwner()))
+                .flatMap(Collection::stream)
+                .distinct()
+                .toList();
+        Map<String, String> userNameMap = baseService.getUserNameMap(userIds);
+        Map<String, UserDeptDTO> userDeptMap = baseService.getUserDeptMapByUserIds(List.of(response.getOwner()), orgId);
+
+        response.setCreateUserName(userNameMap.get(response.getCreateUser()));
+        response.setUpdateUserName(userNameMap.get(response.getUpdateUser()));
+        response.setOwnerName(userNameMap.get(response.getOwner()));
+        UserDeptDTO userDeptDTO = userDeptMap.get(response.getOwner());
+        if (userDeptDTO != null) {
+            response.setDepartmentId(userDeptDTO.getDeptId());
+            response.setDepartmentName(userDeptDTO.getDeptName());
         }
 
-        LambdaQueryWrapper<ContractSnapshot> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ContractSnapshot::getContractId, id);
-        ContractSnapshot snapshot = snapshotBaseMapper.selectListByLambda(wrapper).stream().findFirst().orElse(null);
-        if (snapshot != null) {
-            response = JSON.parseObject(snapshot.getContractValue(), ContractResponse.class);
-        }
+        ModuleFormConfigDTO formSnapshot = getFormSnapshot(id, orgId);
+        Map<String, List<OptionDTO>> optionMap = moduleFormService.getOptionMap(formSnapshot, fieldValueList);
+
+        List<OptionDTO> ownerFieldOption = moduleFormService.getBusinessFieldOption(response,
+                ContractResponse::getOwner, ContractResponse::getOwnerName);
+        optionMap.put(BusinessModuleField.CONTRACT_OWNER.getBusinessKey(), ownerFieldOption);
+
+        List<OptionDTO> customerOption = moduleFormService.getBusinessFieldOption(response,
+                ContractResponse::getCustomerId, ContractResponse::getCustomerName);
+        optionMap.put(BusinessModuleField.CONTRACT_CUSTOMER_NAME.getBusinessKey(), customerOption);
+
+        response.setOptionMap(optionMap);
+
+        // 附件信息
+        response.setAttachmentMap(moduleFormService.getAttachmentMap(formSnapshot, fieldValueList));
 
         return response;
     }
@@ -281,15 +350,15 @@ public class ContractService {
     public PagerWithOption<List<ContractListResponse>> list(ContractPageRequest request, String userId, String orgId, DeptDataPermissionDTO deptDataPermission) {
         Page<Object> page = PageHelper.startPage(request.getCurrent(), request.getPageSize());
         List<ContractListResponse> list = extContractMapper.list(request, orgId, userId, deptDataPermission);
-		ModuleFormConfigDTO customerFormConfig = getFormConfig(orgId);
-        List<ContractListResponse> results = buildList(list, customerFormConfig);
+        List<ContractListResponse> results = buildList(list, orgId);
+        ModuleFormConfigDTO customerFormConfig = getFormConfig(orgId);
         Map<String, List<OptionDTO>> optionMap = buildOptionMap(orgId, list, results, customerFormConfig);
 
         return PageUtils.setPageInfoWithOption(page, results, optionMap);
     }
 
     private Map<String, List<OptionDTO>> buildOptionMap(String orgId, List<ContractListResponse> list, List<ContractListResponse> buildList,
-														ModuleFormConfigDTO formConfig) {
+                                                        ModuleFormConfigDTO formConfig) {
         // 获取所有模块字段的值
         List<BaseModuleFieldValue> moduleFieldValues = moduleFormService.getBaseModuleFieldValues(list, ContractListResponse::getModuleFields);
         // 获取选项值对应的 option
@@ -305,7 +374,7 @@ public class ContractService {
         return moduleFormCacheService.getBusinessFormConfig(FormKey.CONTRACT.getKey(), orgId);
     }
 
-    private List<ContractListResponse> buildList(List<ContractListResponse> list, ModuleFormConfigDTO formConfig) {
+    private List<ContractListResponse> buildList(List<ContractListResponse> list, String orgId) {
         if (CollectionUtils.isEmpty(list)) {
             return list;
         }
@@ -319,12 +388,18 @@ public class ContractService {
                 .distinct()
                 .toList();
         Map<String, String> userNameMap = baseService.getUserNameMap(ownerIds);
+        Map<String, UserDeptDTO> userDeptMap = baseService.getUserDeptMapByUserIds(ownerIds, orgId);
 
         list.forEach(item -> {
             item.setOwnerName(userNameMap.get(item.getOwner()));
+            UserDeptDTO userDeptDTO = userDeptMap.get(item.getOwner());
+            if (userDeptDTO != null) {
+                item.setDepartmentId(userDeptDTO.getDeptId());
+                item.setDepartmentName(userDeptDTO.getDeptName());
+            }
             // 获取自定义字段
             List<BaseModuleFieldValue> contractFields = contractFiledMap.get(item.getId());
-			moduleFormService.processBusinessFieldValues(item, contractFields, formConfig);
+            item.setModuleFields(contractFields);
         });
         return baseService.setCreateAndUpdateUserName(list);
     }
@@ -333,13 +408,13 @@ public class ContractService {
     /**
      * 作废
      *
-     * @param id
+     * @param request
      * @param userId
      * @return
      */
     @OperationLog(module = LogModule.CONTRACT_INDEX, type = LogType.VOIDED, resourceId = "{#id}")
-    public void voidContract(String id, String userId) {
-        Contract contract = contractMapper.selectByPrimaryKey(id);
+    public void voidContract(ContractVoidRequest request, String userId) {
+        Contract contract = contractMapper.selectByPrimaryKey(request.getId());
         if (contract == null) {
             throw new GenericException(Translator.get("contract.not.exist"));
         }
@@ -349,6 +424,7 @@ public class ContractService {
         }
 
         contract.setStatus(ContractStatus.VOID.name());
+        contract.setVoidReason(request.getVoidReason());
         contract.setUpdateTime(System.currentTimeMillis());
         contract.setUpdateUser(userId);
         contractMapper.updateById(contract);

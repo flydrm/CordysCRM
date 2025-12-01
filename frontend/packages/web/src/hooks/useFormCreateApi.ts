@@ -23,7 +23,7 @@ import {
   singleTypes,
 } from '@lib/shared/method/formCreate';
 import type { CollaborationType, ModuleField } from '@lib/shared/models/customer';
-import type { FormConfig } from '@lib/shared/models/system/module';
+import type { FormConfig, FormDesignConfigDetailParams } from '@lib/shared/models/system/module';
 
 import type { Description } from '@/components/pure/crm-description/index.vue';
 import {
@@ -85,6 +85,7 @@ export default function useFormCreateApi(props: FormCreateApiProps) {
   }); // 表单属性配置
   const formDetail = ref<Record<string, any>>({});
   const originFormDetail = ref<Record<string, any>>({});
+  const moduleFormConfig = ref<FormDesignConfigDetailParams>();
 
   // 详情
   const detail = ref<Record<string, any>>({});
@@ -234,6 +235,30 @@ export default function useFormCreateApi(props: FormCreateApiProps) {
     ],
     [FormDesignKeyEnum.CUSTOMER_OPPORTUNITY]: opportunityInternalFields,
     [FormDesignKeyEnum.CLUE_TRANSITION_CUSTOMER]: customerInternalFields,
+    [FormDesignKeyEnum.CONTRACT]: [
+      {
+        title: t('org.department'),
+        key: 'departmentName',
+      },
+      {
+        title: t('contract.voidReason'),
+        key: 'voidReason',
+      },
+      {
+        title: t('opportunity.quotation.amount'),
+        key: 'amount',
+      },
+      {
+        title: t('contract.archivedStatus'),
+        key: 'archivedStatus',
+      },
+    ],
+    [FormDesignKeyEnum.CONTRACT_PAYMENT]: [
+      {
+        title: t('org.department'),
+        key: 'departmentName',
+      },
+    ],
   };
   const staticFields = [
     {
@@ -253,6 +278,8 @@ export default function useFormCreateApi(props: FormCreateApiProps) {
       key: 'updateTime',
     },
   ];
+  // 用于快照保存表单配置
+  const needModuleFormConfigParamsType = [FormDesignKeyEnum.OPPORTUNITY_QUOTATION, FormDesignKeyEnum.CONTRACT];
 
   function initFormShowControl() {
     // 读取整个显隐控制映射
@@ -365,6 +392,18 @@ export default function useFormCreateApi(props: FormCreateApiProps) {
           label: item.name,
           value: name || form[item.businessKey],
           slotName: FieldDataSourceTypeEnum.CUSTOMER,
+          fieldInfo: item,
+          tooltipPosition: 'top-end',
+        });
+      } else if (
+        item.type === FieldTypeEnum.DATA_SOURCE &&
+        item.dataSourceType === FieldDataSourceTypeEnum.CONTRACT &&
+        [FormDesignKeyEnum.CONTRACT_PAYMENT].includes(props.formKey.value)
+      ) {
+        descriptions.value.push({
+          label: item.name,
+          value: name || form[item.businessKey],
+          slotName: FieldDataSourceTypeEnum.CONTRACT,
           fieldInfo: item,
           tooltipPosition: 'top-end',
         });
@@ -509,6 +548,7 @@ export default function useFormCreateApi(props: FormCreateApiProps) {
             value: form[item.businessKey || item.id],
             slotName: item.type,
             fieldInfo: item,
+            optionMap: form.optionMap,
           });
         } else {
           makeDescriptionItem(item, form);
@@ -711,7 +751,7 @@ export default function useFormCreateApi(props: FormCreateApiProps) {
       ) {
         // 处理成员和数据源类型的字段
         item.initialOptions = options
-          ?.filter((e) => formDetail.value[item.id].includes(e.id))
+          ?.filter((e) => formDetail.value[item.id]?.includes(e.id))
           .map((e) => ({
             ...e,
             name: e.name || t('common.optionNotExist'),
@@ -737,7 +777,7 @@ export default function useFormCreateApi(props: FormCreateApiProps) {
       if ([FieldTypeEnum.DATA_SOURCE].includes(subField.type)) {
         // 处理成员和数据源类型的字段
         subField.initialOptions = options
-          ?.filter((e) => formDetail.value[subField.id].includes(e.id))
+          ?.filter((e) => formDetail.value[subField.id]?.includes(e.id))
           .map((e) => ({
             ...e,
             name: e.name || t('common.optionNotExist'),
@@ -1008,7 +1048,9 @@ export default function useFormCreateApi(props: FormCreateApiProps) {
   async function initFormConfig() {
     try {
       loading.value = true;
-      const res = await getFormConfigApiMap[props.formKey.value]();
+      const api = getFormConfigApiMap[props.formKey.value];
+      const res = await api(props.sourceId?.value ?? '');
+      moduleFormConfig.value = res;
       initFormFieldConfig(res.fields);
       formConfig.value = res.formProp;
       nextTick(() => {
@@ -1204,6 +1246,10 @@ export default function useFormCreateApi(props: FormCreateApiProps) {
           });
         }
       });
+
+      if (needModuleFormConfigParamsType.includes(props.formKey.value)) {
+        params.moduleFormConfigDTO = moduleFormConfig.value;
+      }
       let res;
       if (props.sourceId?.value && props.needInitDetail?.value) {
         res = await updateFormApi[props.formKey.value](params);
@@ -1259,6 +1305,7 @@ export default function useFormCreateApi(props: FormCreateApiProps) {
     resetForm,
     initFormShowControl,
     makeLinkFormFields,
+    moduleFormConfig,
     detail,
   };
 }

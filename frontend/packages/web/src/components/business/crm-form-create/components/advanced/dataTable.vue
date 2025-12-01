@@ -12,8 +12,8 @@
       :parent-id="fieldConfig.id"
       :readonly="false"
       :form-detail="props.formDetail"
-      :fixed-column="fieldConfig.fixedColumn"
-      :show-summary="!!fieldConfig.sumColumn?.length"
+      :fixed-column="props.fieldConfig.fixedColumn"
+      :sumColumns="props.fieldConfig.sumColumns"
     />
   </n-form-item>
 </template>

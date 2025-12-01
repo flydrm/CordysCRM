@@ -1,5 +1,5 @@
 <template>
-  <CrmDrawer v-model:show="visible" resizable no-padding width="800" :footer="false" :title="props.detail?.name ?? ''">
+  <CrmDrawer v-model:show="visible" resizable no-padding :width="800" :footer="false" :title="props.detail?.name ?? ''">
     <template #titleLeft>
       <div class="text-[14px] font-normal">
         <quotationStatus v-if="props.detail?.approvalStatus" :status="props.detail?.approvalStatus" />
@@ -29,22 +29,18 @@
         </CrmMoreAction>
       </div>
     </template>
-    <div class="h-full bg-[var(--text-n9)] px-[16px] pt-[16px]">
-      <CrmCard hide-footer>
-        <div class="flex-1">
-          <CrmFormDescription
-            :form-key="FormDesignKeyEnum.OPPORTUNITY_QUOTATION_SNAPSHOT"
-            :source-id="sourceId"
-            :column="2"
-            :refresh-key="props.refreshId"
-            label-width="auto"
-            value-align="start"
-            tooltip-position="top-start"
-            @init="handleInit"
-          />
-        </div>
-      </CrmCard>
-    </div>
+    <CrmFormDescription
+      ref="formDescriptionRef"
+      :form-key="FormDesignKeyEnum.OPPORTUNITY_QUOTATION_SNAPSHOT"
+      :source-id="sourceId"
+      :column="2"
+      :refresh-key="props.refreshId"
+      label-width="auto"
+      value-align="start"
+      tooltip-position="top-start"
+      class="p-[16px]"
+      @init="handleInit"
+    />
   </CrmDrawer>
 </template>
 
@@ -59,7 +55,6 @@
   import { CollaborationType } from '@lib/shared/models/customer';
   import { QuotationItem } from '@lib/shared/models/opportunity';
 
-  import CrmCard from '@/components/pure/crm-card/index.vue';
   import CrmDrawer from '@/components/pure/crm-drawer/index.vue';
   import CrmMoreAction from '@/components/pure/crm-more-action/index.vue';
   import type { ActionsItem } from '@/components/pure/crm-more-action/type';
@@ -157,14 +152,19 @@
     },
   ];
 
+  const formDescriptionRef = ref<InstanceType<typeof CrmFormDescription> | null>(null);
   async function handleApproval(approval = false) {
     const approvalStatus = approval ? QuotationStatusEnum.APPROVED : QuotationStatusEnum.UNAPPROVED;
+    const { name, opportunityId, moduleFields = [], products = [] } = props.detail || {};
     try {
       await approvalQuotation({
         id: sourceId.value,
-        name: props.detail?.name ?? '',
+        name: name ?? '',
         approvalStatus,
-        opportunityId: props.detail?.opportunityId ?? '',
+        opportunityId: opportunityId ?? '',
+        moduleFormConfigDTO: formDescriptionRef.value?.moduleFormConfig,
+        moduleFields,
+        products,
       });
       Message.success(approval ? t('common.approvedSuccess') : t('common.unApprovedSuccess'));
       visible.value = false;
@@ -215,7 +215,7 @@
       type: 'error',
       title: t('opportunity.quotation.deleteTitleTip', { name: characterLimit(name) }),
       content: t('opportunity.quotation.deleteContentTip'),
-      positiveText: t('common.confirmVoid'),
+      positiveText: t('common.confirmDelete'),
       negativeText: t('common.cancel'),
       onPositiveClick: async () => {
         try {
@@ -267,7 +267,7 @@
       case QuotationStatusEnum.APPROVED:
         return commonActions.filter((item) => ['download'].includes(item.key));
       case QuotationStatusEnum.UNAPPROVED:
-      case QuotationStatusEnum.REVOKE:
+      case QuotationStatusEnum.REVOKED:
         return commonActions.filter((item) => ['edit'].includes(item.key));
       case QuotationStatusEnum.VOIDED:
         return deleteActions;
@@ -286,7 +286,7 @@
         const successStatusGroups = isShowApproval ? commonActionsKeys : ['download', ...commonActionsKeys];
         return getActions(successStatusGroups);
       case QuotationStatusEnum.UNAPPROVED:
-      case QuotationStatusEnum.REVOKE:
+      case QuotationStatusEnum.REVOKED:
         const revokeStatusGroups = isShowApproval ? commonActionsKeys : ['edit', 'download', ...commonActionsKeys];
         return getActions(revokeStatusGroups);
       case QuotationStatusEnum.APPROVING:

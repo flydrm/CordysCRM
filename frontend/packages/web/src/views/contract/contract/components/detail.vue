@@ -2,26 +2,36 @@
   <CrmDrawer v-model:show="visible" resizable no-padding width="800" :footer="false" :title="title">
     <template #titleLeft>
       <div class="text-[14px] font-normal">
-        <ContractStatus :status="detailInfo.status" />
+        <ContractStatus :status="detailInfo?.status ?? ContractStatusEnum.SIGNED" />
       </div>
     </template>
-    <template v-if="detailInfo.status !== ContractStatusEnum.VOID" #titleRight>
-      <CrmButtonGroup :list="buttonList" not-show-divider @select="handleButtonClick" />
+    <template v-if="detailInfo?.status !== ContractStatusEnum.VOID" #titleRight>
+      <CrmButtonGroup class="gap-[12px]" :list="buttonList" not-show-divider @select="handleButtonClick" />
     </template>
-    <div class="h-full bg-[var(--text-n9)] px-[16px] pt-[16px]">
-      <CrmCard hide-footer>
-        <div class="flex-1">
-          <CrmFormDescription
-            :form-key="FormDesignKeyEnum.CONTRACT"
-            :source-id="props.sourceId"
-            :column="2"
-            :refresh-key="refreshKey"
-            label-width="auto"
-            value-align="start"
-            tooltip-position="top-start"
-            @init="handleInit"
-          />
-        </div>
+    <div class="h-full bg-[var(--text-n9)] p-[16px]">
+      <CrmCard no-content-padding hide-footer auto-height class="mb-[16px]">
+        <CrmTab v-model:active-tab="activeTab" no-content :tab-list="tabList" type="line" />
+      </CrmCard>
+
+      <CrmCard hide-footer :special-height="64" noContentBottomPadding>
+        <CrmFormDescription
+          v-if="activeTab === 'contract'"
+          :form-key="FormDesignKeyEnum.CONTRACT_SNAPSHOT"
+          :source-id="props.sourceId"
+          :column="2"
+          :refresh-key="refreshKey"
+          label-width="auto"
+          value-align="start"
+          tooltip-position="top-start"
+          @init="handleInit"
+        />
+        <PaymentTable
+          v-else
+          :sourceId="props.sourceId"
+          :sourceName="title"
+          isContractTab
+          :readonly="detailInfo?.status === ContractStatusEnum.VOID"
+        />
       </CrmCard>
     </div>
     <CrmFormCreateDrawer
@@ -30,7 +40,14 @@
       :source-id="props.sourceId"
       need-init-detail
       :link-form-key="FormDesignKeyEnum.CONTRACT"
-      @saved="handleSaved"
+      @saved="() => handleSaved()"
+    />
+
+    <VoidReasonModal
+      v-model:visible="showVoidReasonModal"
+      :name="detailInfo?.name ?? ''"
+      :sourceId="props.sourceId"
+      @refresh="handleSaved"
     />
   </CrmDrawer>
 </template>
@@ -48,9 +65,12 @@
   import CrmButtonGroup from '@/components/pure/crm-button-group/index.vue';
   import CrmCard from '@/components/pure/crm-card/index.vue';
   import CrmDrawer from '@/components/pure/crm-drawer/index.vue';
+  import CrmTab from '@/components/pure/crm-tab/index.vue';
   import CrmFormCreateDrawer from '@/components/business/crm-form-create-drawer/index.vue';
   import CrmFormDescription from '@/components/business/crm-form-description/index.vue';
+  import VoidReasonModal from './voidReasonModal.vue';
   import ContractStatus from '@/views/contract/contract/components/contractStatus.vue';
+  import PaymentTable from '@/views/contract/contractPaymentPlan/components/paymentTable.vue';
 
   import { archivedContract, deleteContract, voidedContract } from '@/api/modules';
   import useModal from '@/hooks/useModal';
@@ -72,10 +92,20 @@
   const title = ref('');
   const detailInfo = ref();
 
+  const activeTab = ref('contract');
+  const tabList = [
+    {
+      name: 'contract',
+      tab: t('module.contract'),
+    },
+    {
+      name: 'payment',
+      tab: t('module.paymentPlan'),
+    },
+  ];
+
   const buttonList = computed(() => {
-    const info = detailInfo.value;
-    const isArchived = info.archivedStatus === ArchiveStatusEnum.ARCHIVED;
-    if (isArchived) {
+    if (detailInfo.value?.archivedStatus === ArchiveStatusEnum.ARCHIVED) {
       return [
         {
           key: 'unarchive',
@@ -161,33 +191,19 @@
     });
   }
 
-  function handleVoided(row: ContractItem) {
-    openModal({
-      type: 'error',
-      title: t('contract.voidedConfirmTitle', { name: characterLimit(row.name) }),
-      content: t('contract.voidedConfirmContent'),
-      positiveText: t('common.confirmVoid'),
-      negativeText: t('common.cancel'),
-      onPositiveClick: async () => {
-        try {
-          await voidedContract(row.id);
-          Message.success(t('common.voidSuccess'));
-          handleSaved();
-        } catch (error) {
-          // eslint-disable-next-line no-console
-          console.error(error);
-        }
-      },
-    });
+  const showVoidReasonModal = ref(false);
+  function handleVoided() {
+    showVoidReasonModal.value = true;
   }
 
   async function handleArchive(id: string, status: string) {
     try {
-      await archivedContract(id, status);
-      if (status === ArchiveStatusEnum.UN_ARCHIVED) {
+      const isArchived = status === ArchiveStatusEnum.ARCHIVED;
+      await archivedContract(id, isArchived ? ArchiveStatusEnum.UN_ARCHIVED : ArchiveStatusEnum.ARCHIVED);
+      if (!isArchived) {
         Message.success(t('common.batchArchiveSuccess'));
       } else {
-        Message.success(`${t('common.unArchive')}${t('common.success')}`);
+        Message.success(`${t('common.unarchive')}${t('common.success')}`);
       }
       handleSaved();
     } catch (error) {
@@ -208,7 +224,7 @@
         handleArchive(props.sourceId, detailInfo.value.archivedStatus);
         break;
       case 'voided':
-        handleVoided(detailInfo.value);
+        handleVoided();
         break;
       case 'delete':
         handleDelete(detailInfo.value);

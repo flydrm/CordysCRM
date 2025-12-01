@@ -161,6 +161,8 @@ public class PermissionConstants {
     public static final String PRICE_ADD = "PRICE:ADD";
     public static final String PRICE_UPDATE = "PRICE:UPDATE";
     public static final String PRICE_DELETE = "PRICE:DELETE";
+    public static final String PRICE_IMPORT = "PRICE:IMPORT";
+    public static final String PRICE_EXPORT = "PRICE:EXPORT";
 
 
     /*------ start: OPPORTUNITY_QUOTATION ------*/
@@ -183,7 +185,6 @@ public class PermissionConstants {
     public static final String CONTRACT_EXPORT = "CONTRACT:EXPORT";
     public static final String CONTRACT_ARCHIVE = "CONTRACT:ARCHIVE";
     public static final String CONTRACT_VOIDED = "CONTRACT:VOIDED";
-    public static final String CONTRACT_REVIEW = "CONTRACT:REVIEW";
 
     /*------ end: CONTRACT ------*/
 

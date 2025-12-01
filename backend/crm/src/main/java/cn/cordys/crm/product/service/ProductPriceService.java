@@ -23,13 +23,20 @@ import cn.cordys.crm.product.dto.request.ProductPricePageRequest;
 import cn.cordys.crm.product.dto.response.ProductPriceGetResponse;
 import cn.cordys.crm.product.dto.response.ProductPriceResponse;
 import cn.cordys.crm.product.mapper.ExtProductPriceMapper;
+import cn.cordys.crm.system.constants.SheetKey;
+import cn.cordys.crm.system.dto.field.base.BaseField;
+import cn.cordys.crm.system.dto.request.ResourceBatchEditRequest;
 import cn.cordys.crm.system.dto.response.ModuleFormConfigDTO;
+import cn.cordys.crm.system.excel.handler.CustomHeadColWidthStyleStrategy;
+import cn.cordys.crm.system.excel.handler.CustomTemplateWriteHandler;
 import cn.cordys.crm.system.service.ModuleFormCacheService;
 import cn.cordys.crm.system.service.ModuleFormService;
+import cn.cordys.excel.utils.EasyExcelExporter;
 import cn.cordys.mybatis.BaseMapper;
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -64,9 +71,9 @@ public class ProductPriceService {
     public PagerWithOption<List<ProductPriceResponse>> list(ProductPricePageRequest request, String currentOrg) {
         Page<Object> page = PageHelper.startPage(request.getCurrent(), request.getPageSize());
         List<ProductPriceResponse> list = extProductPriceMapper.list(request, currentOrg);
-		ModuleFormConfigDTO priceFormConfig = moduleFormCacheService.getBusinessFormConfig(FormKey.PRICE.getKey(), currentOrg);
-        List<ProductPriceResponse> results = buildList(list, priceFormConfig);
+        List<ProductPriceResponse> results = buildList(list);
         // 处理自定义字段选项
+		ModuleFormConfigDTO priceFormConfig = moduleFormCacheService.getBusinessFormConfig(FormKey.PRICE.getKey(), currentOrg);
         List<BaseModuleFieldValue> moduleFieldValues = moduleFormService.getBaseModuleFieldValues(results, ProductPriceResponse::getModuleFields);
         Map<String, List<OptionDTO>> optionMap = moduleFormService.getOptionMap(priceFormConfig, moduleFieldValues);
         return PageUtils.setPageInfoWithOption(page, results, optionMap);
@@ -95,7 +102,7 @@ public class ProductPriceService {
         productPriceFieldService.saveModuleField(productPrice, currentOrg, currentUser, request.getModuleFields(), false);
         productPriceMapper.insert(productPrice);
         // 处理日志上下文
-        baseService.handleAddLog(productPrice, request.getModuleFields());
+        baseService.handleAddLogWithSubTable(productPrice, request.getModuleFields(), "products", Translator.get("products_info"));
         return productPrice;
     }
 
@@ -138,12 +145,12 @@ public class ProductPriceService {
             throw new GenericException(Translator.get("product.price.not.exist"));
         }
         ProductPriceGetResponse priceDetail = BeanUtils.copyBean(new ProductPriceGetResponse(), price);
-		ModuleFormConfigDTO priceFormConf = moduleFormCacheService.getBusinessFormConfig(FormKey.PRICE.getKey(), price.getOrganizationId());
         // 处理自定义字段(包括详情附件)
 		List<BaseModuleFieldValue> fieldValues = productPriceFieldService.getModuleFieldValuesByResourceId(id);
+		ModuleFormConfigDTO priceFormConf = moduleFormCacheService.getBusinessFormConfig(FormKey.PRICE.getKey(), price.getOrganizationId());
+		Map<String, List<OptionDTO>> optionMap = moduleFormService.getOptionMap(priceFormConf, fieldValues);
+		priceDetail.setOptionMap(optionMap);
 		moduleFormService.processBusinessFieldValues(priceDetail, fieldValues, priceFormConf);
-        Map<String, List<OptionDTO>> optionMap = moduleFormService.getOptionMap(priceFormConf, priceDetail.getModuleFields());
-        priceDetail.setOptionMap(optionMap);
         priceDetail.setAttachmentMap(moduleFormService.getAttachmentMap(priceFormConf, priceDetail.getModuleFields()));
         return baseService.setCreateAndUpdateUserName(priceDetail);
     }
@@ -165,21 +172,45 @@ public class ProductPriceService {
         OperationLogContext.setResourceName(price.getName());
     }
 
+	/**
+	 * 批量更新价格表
+	 * @param request 请求参数
+	 * @param currentUser 当前用户
+	 * @param currentOrg 当前组织
+	 */
+	public void batchUpdate(ResourceBatchEditRequest request, String currentUser, String currentOrg) {
+		BaseField field = productPriceFieldService.getAndCheckField(request.getFieldId(), currentOrg);
+		List<ProductPrice> prices = productPriceMapper.selectByIds(request.getIds());
+		productPriceFieldService.batchUpdate(request, field, prices, ProductPrice.class,
+				LogModule.PRODUCT_PRICE_MANAGEMENT, extProductPriceMapper::batchUpdate, currentUser, currentOrg);
+	}
+
+	/**
+	 * 下载导入的模板
+	 * @param response 响应
+	 */
+	public void downloadImportTpl(HttpServletResponse response, String currentOrg) {
+		new EasyExcelExporter().exportMultiSheetTplWithSharedHandler(response,
+				moduleFormService.getCustomImportHeads(FormKey.PRICE.getKey(), currentOrg),
+				Translator.get("product.price.import_tpl.name"),
+				Translator.get(SheetKey.DATA), Translator.get(SheetKey.COMMENT),
+				new CustomTemplateWriteHandler(moduleFormService.getCustomImportFields(FormKey.PRICE.getKey(), currentOrg)),
+				new CustomHeadColWidthStyleStrategy()
+		);
+	}
+
     /**
      * 构建列表数据
      *
      * @param listData 列表数据
      * @return 列表数据
      */
-    private List<ProductPriceResponse> buildList(List<ProductPriceResponse> listData, ModuleFormConfigDTO priceFormConfig) {
+    private List<ProductPriceResponse> buildList(List<ProductPriceResponse> listData) {
         // 查询列表数据的自定义字段
         Map<String, List<BaseModuleFieldValue>> dataFieldMap = productPriceFieldService.getResourceFieldMap(
                 listData.stream().map(ProductPriceResponse::getId).toList(), true);
         // 列表项设置自定义字段&&用户名
-		listData.forEach(item -> {
-			List<BaseModuleFieldValue> fieldValues = dataFieldMap.get(item.getId());
-			moduleFormService.processBusinessFieldValues(item, fieldValues, priceFormConfig);
-		});
+		listData.forEach(item -> item.setModuleFields(dataFieldMap.get(item.getId())));
         return baseService.setCreateAndUpdateUserName(listData);
     }
 

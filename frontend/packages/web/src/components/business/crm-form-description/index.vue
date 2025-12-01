@@ -64,6 +64,19 @@
           </CrmTableButton>
         </div>
       </template>
+      <template #[FieldDataSourceTypeEnum.CONTRACT]="{ item }">
+        <div class="field-line flex w-full items-center">
+          <div class="mr-[16px] text-[var(--text-n2)]" :style="{ width: props.labelWidth || '120px' }">
+            {{ item.label }}
+          </div>
+          <CrmTableButton @click="openContractDetail(formDetail[item.fieldInfo.id])">
+            <template #trigger>
+              {{ item.value }}
+            </template>
+            {{ item.value }}
+          </CrmTableButton>
+        </div>
+      </template>
       <template #[FieldTypeEnum.DATE_TIME]="{ item }">
         <div class="field-line flex w-full items-center">
           <div class="mr-[16px] text-[var(--text-n2)]" :style="{ width: props.labelWidth || '120px' }">
@@ -98,6 +111,7 @@
           :value="item.value as Record<string, any>[] || []"
           :sub-fields="item.fieldInfo.subFields"
           :fixed-column="item.fieldInfo.fixedColumn"
+          :sum-columns="item.fieldInfo.sumColumns"
           readonly
         />
       </template>
@@ -107,6 +121,8 @@
           :value="item.value as Record<string, any>[] || []"
           :sub-fields="item.fieldInfo.subFields"
           :fixed-column="item.fieldInfo.fixedColumn"
+          :sum-columns="item.fieldInfo.sumColumns"
+          :optionMap="item.optionMap"
           readonly
         />
       </template>
@@ -163,6 +179,7 @@
   const emit = defineEmits<{
     (e: 'init', collaborationType?: CollaborationType, sourceName?: string, detail?: Record<string, any>): void;
     (e: 'openCustomerDetail', params: { customerId: string; inCustomerPool: boolean; poolId: string }): void;
+    (e: 'openContractDetail', params: { id: string }): void;
   }>();
 
   const { t } = useI18n();
@@ -176,6 +193,7 @@
     sourceName,
     detail,
     formDetail,
+    moduleFormConfig,
     initFormDetail,
     initFormConfig,
     initFormDescription,
@@ -236,6 +254,12 @@
     });
   }
 
+  function openContractDetail(id: string | string[]) {
+    emit('openContractDetail', {
+      id: Array.isArray(id) ? id[0] : id,
+    });
+  }
+
   // 打开链接
   function openLink(item: any) {
     if (item.fieldInfo.openMode === 'openInCurrent') {
@@ -284,6 +308,7 @@
 
   defineExpose({
     initFormDescription,
+    moduleFormConfig,
   });
 </script>
 
