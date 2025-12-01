@@ -175,6 +175,7 @@
     batchUpdateOpenSeaCustomer,
     batchUpdateOpportunity,
     batchUpdateProduct,
+    batchUpdateProductPrice,
   } from '@/api/modules';
   import { useUserStore } from '@/store';
 
@@ -216,7 +217,7 @@
     [FormDesignKeyEnum.PRODUCT]: batchUpdateProduct,
     [FormDesignKeyEnum.CUSTOMER]: batchUpdateAccount,
     [FormDesignKeyEnum.CUSTOMER_CONTACT]: batchUpdateContact,
-    [FormDesignKeyEnum.PRICE]: batchUpdateProduct, // TODO:
+    [FormDesignKeyEnum.PRICE]: batchUpdateProductPrice,
   };
 
   const initForm = {
@@ -242,6 +243,7 @@
           FieldTypeEnum.ATTACHMENT,
           FieldTypeEnum.SUB_PRICE,
           FieldTypeEnum.SUB_PRODUCT,
+          FieldTypeEnum.FORMULA,
         ].includes(e.type);
 
         if (props.formKey === FormDesignKeyEnum.CLUE_POOL || props.formKey === FormDesignKeyEnum.CUSTOMER_OPEN_SEA) {
