@@ -136,6 +136,14 @@ write_mysql_ca() {
         return
     fi
 
+    # 默认探测 /app/ca.txt（可通过挂载提供）
+    if [ -f "/app/ca.txt" ]; then
+        log_info "检测到默认 CA 文件 /app/ca.txt，复制到 ${ca_target}"
+        cp "/app/ca.txt" "$ca_target"
+        echo "$ca_target"
+        return
+    fi
+
     echo ""
 }
 
