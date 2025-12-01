@@ -111,45 +111,6 @@ validate_config() {
 }
 
 # ============================================================================
-# 测试外部服务连通性
-# ============================================================================
-test_connectivity() {
-    log_step "测试外部服务连通性"
-    
-    source .env 2>/dev/null || true
-    local has_error=0
-    
-    # 测试 MySQL
-    log_info "测试 MySQL 连接 (${MYSQL_HOST}:${MYSQL_PORT:-3306})..."
-    if nc -z -w 5 "$MYSQL_HOST" "${MYSQL_PORT:-3306}" 2>/dev/null; then
-        log_info "MySQL 端口连通 ✓"
-    else
-        log_error "无法连接到 MySQL"
-        has_error=1
-    fi
-    
-    # 测试 Redis
-    log_info "测试 Redis 连接 (${REDIS_HOST}:${REDIS_PORT:-6379})..."
-    if nc -z -w 5 "$REDIS_HOST" "${REDIS_PORT:-6379}" 2>/dev/null; then
-        log_info "Redis 端口连通 ✓"
-    else
-        log_error "无法连接到 Redis"
-        has_error=1
-    fi
-    
-    if [ $has_error -eq 1 ]; then
-        log_error "外部服务连通性测试失败"
-        log_info "请检查："
-        echo "  1. 服务是否启动"
-        echo "  2. 防火墙是否开放端口"
-        echo "  3. 网络路由是否正确"
-        exit 1
-    fi
-    
-    log_info "所有外部服务连通性测试通过 ✓"
-}
-
-# ============================================================================
 # 部署 Cordys CRM
 # ============================================================================
 deploy() {
@@ -230,11 +191,9 @@ main() {
     # 执行部署流程
     check_prerequisites
     validate_config
-    test_connectivity
     deploy
     print_access_info
 }
 
 # 执行主函数
 main "$@"
-

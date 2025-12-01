@@ -88,44 +88,6 @@ check_prerequisites() {
     log_info "系统检查通过！"
 }
 
-# 测试外部服务连接
-test_external_services() {
-    log_step "测试外部服务连接"
-    
-    local has_error=0
-    
-    # 测试 MySQL 连接
-    if [ -n "$MYSQL_HOST" ]; then
-        log_info "测试 MySQL 连接: $MYSQL_HOST:$MYSQL_PORT"
-        if nc -z -w 5 "$MYSQL_HOST" "$MYSQL_PORT" 2>/dev/null; then
-            log_info "MySQL 端口连通 ✓"
-        else
-            log_error "无法连接到 MySQL: $MYSQL_HOST:$MYSQL_PORT"
-            log_error "请检查: 1) MySQL 服务是否运行 2) 防火墙是否开放端口 3) 网络连通性"
-            has_error=1
-        fi
-    fi
-    
-    # 测试 Redis 连接
-    if [ -n "$REDIS_HOST" ]; then
-        log_info "测试 Redis 连接: $REDIS_HOST:$REDIS_PORT"
-        if nc -z -w 5 "$REDIS_HOST" "$REDIS_PORT" 2>/dev/null; then
-            log_info "Redis 端口连通 ✓"
-        else
-            log_error "无法连接到 Redis: $REDIS_HOST:$REDIS_PORT"
-            log_error "请检查: 1) Redis 服务是否运行 2) 防火墙是否开放端口 3) 网络连通性"
-            has_error=1
-        fi
-    fi
-    
-    if [ $has_error -eq 1 ]; then
-        log_error "外部服务连接测试失败！"
-        exit 1
-    fi
-    
-    log_info "外部服务连接测试通过！"
-}
-
 # 配置向导
 configure_wizard() {
     log_step "配置向导"
@@ -346,7 +308,6 @@ main() {
     # 执行部署流程
     check_prerequisites
     configure_wizard
-    test_external_services
     generate_env_file
     create_data_directories
     deploy_services
@@ -355,4 +316,3 @@ main() {
 
 # 执行主函数
 main "$@"
-
