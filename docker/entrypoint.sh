@@ -144,6 +144,14 @@ write_mysql_ca() {
         return
     fi
 
+    # 兼容 /app/ca.pem（例如将 backend/ca/ca.pem 挂载到此路径）
+    if [ -f "/app/ca.pem" ]; then
+        log_info "检测到默认 CA 文件 /app/ca.pem，复制到 ${ca_target}"
+        cp "/app/ca.pem" "$ca_target"
+        echo "$ca_target"
+        return
+    fi
+
     echo ""
 }
 

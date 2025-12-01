@@ -46,6 +46,8 @@ services:
     volumes:
       # 持久化数据目录
       - ${DATA_PATH:-./data}/cordys:/opt/cordys
+      # 可选：挂载 MySQL CA（例：将 backend/ca/ca.pem 挂到 /app/ca.pem）
+      # - ./backend/ca/ca.pem:/app/ca.pem:ro
       # 可选：挂载 MySQL CA 到 /app/ca.txt（入口脚本会自动探测）
       # - /path/to/aiven-ca.pem:/app/ca.txt:ro
     
