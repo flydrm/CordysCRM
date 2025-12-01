@@ -153,6 +153,32 @@ safe_config_replace() {
 }
 
 # ============================================================================
+# 处理 MySQL CA 证书
+# - MYSQL_SSL_CA:   直接提供 PEM 内容（多行）；脚本会写入 /opt/cordys/conf/mysql-ca.pem
+# - MYSQL_SSL_CA_PATH: 指向容器内已有的 PEM 文件；会复制到 /opt/cordys/conf/mysql-ca.pem
+# 返回值：输出生成的 CA 文件路径（若无则空）
+# ============================================================================
+write_mysql_ca() {
+    local ca_target="/opt/cordys/conf/mysql-ca.pem"
+
+    if [ -n "$MYSQL_SSL_CA" ]; then
+        log_info "写入 MySQL CA 证书到 ${ca_target}"
+        printf '%s\n' "$MYSQL_SSL_CA" > "$ca_target"
+        echo "$ca_target"
+        return
+    fi
+
+    if [ -n "$MYSQL_SSL_CA_PATH" ] && [ -f "$MYSQL_SSL_CA_PATH" ]; then
+        log_info "复制 MySQL CA 证书: ${MYSQL_SSL_CA_PATH} -> ${ca_target}"
+        cp "$MYSQL_SSL_CA_PATH" "$ca_target"
+        echo "$ca_target"
+        return
+    fi
+
+    echo ""
+}
+
+# ============================================================================
 # 应用环境变量到配置文件
 # ============================================================================
 apply_env_config() {
@@ -177,6 +203,26 @@ apply_env_config() {
         mysql_url="${mysql_url}&serverTimezone=${TZ:-Asia/Shanghai}"
         mysql_url="${mysql_url}&connectTimeout=10000&socketTimeout=60000"
         mysql_url="${mysql_url}&sessionVariables=sql_mode=%27STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION%27"
+
+        # SSL 模式和 CA 证书
+        local mysql_ssl_mode=""
+        if [ -n "$MYSQL_SSL_MODE" ]; then
+            mysql_ssl_mode="$MYSQL_SSL_MODE"
+        elif [ "${MYSQL_SSL,,}" = "true" ]; then
+            mysql_ssl_mode="VERIFY_CA"
+        fi
+        if [ -n "$mysql_ssl_mode" ]; then
+            mysql_url="${mysql_url}&sslMode=${mysql_ssl_mode}"
+        fi
+
+        # 如果提供 CA，则写入文件并注入 serverSslCert
+        if [ "${MYSQL_SSL,,}" = "true" ] || [ "$mysql_ssl_mode" = "VERIFY_CA" ] || [ "$mysql_ssl_mode" = "VERIFY_IDENTITY" ]; then
+            local mysql_ca_file
+            mysql_ca_file=$(write_mysql_ca)
+            if [ -n "$mysql_ca_file" ]; then
+                mysql_url="${mysql_url}&serverSslCert=${mysql_ca_file}"
+            fi
+        fi
         
         safe_config_replace "$config_file" "spring.datasource.url" "$mysql_url"
         safe_config_replace "$config_file" "spring.datasource.username" "${MYSQL_USERNAME:-root}"
@@ -197,16 +243,23 @@ apply_env_config() {
     # Redis 配置
     # ========================================
     if [ -n "$REDIS_HOST" ]; then
-        log_info "检测到外部 Redis 配置: ${REDIS_HOST}:${REDIS_PORT:-6379}"
+        # 支持 rediss:// 或 redis:// 前缀，统一剥离为纯主机名
+        local redis_host="${REDIS_HOST#*://}"
+        log_info "检测到外部 Redis 配置: ${redis_host}:${REDIS_PORT:-6379}"
         
         # 禁用内置 Redis
         safe_config_replace "$config_file" "redis.embedded.enabled" "false"
         
-        safe_config_replace "$config_file" "spring.data.redis.host" "${REDIS_HOST}"
+        safe_config_replace "$config_file" "spring.data.redis.host" "${redis_host}"
         safe_config_replace "$config_file" "spring.data.redis.port" "${REDIS_PORT:-6379}"
         
         if [ -n "$REDIS_PASSWORD" ]; then
             safe_config_replace "$config_file" "spring.data.redis.password" "${REDIS_PASSWORD}"
+        fi
+
+        # TLS 支持（Aiven 等云服务通常强制 TLS）
+        if [ -n "$REDIS_SSL" ]; then
+            safe_config_replace "$config_file" "spring.data.redis.ssl" "${REDIS_SSL}"
         fi
     else
         log_info "使用内置 Redis"
@@ -284,8 +337,10 @@ validate_external_services() {
     
     # 验证 Redis 连接
     if [ -n "$REDIS_HOST" ]; then
-        log_info "验证 Redis 连接: ${REDIS_HOST}:${REDIS_PORT:-6379}"
-        if ! wait_for_service "$REDIS_HOST" "${REDIS_PORT:-6379}" 60 "Redis"; then
+        # 剥离协议前缀，避免 nc 解析失败
+        local redis_host="${REDIS_HOST#*://}"
+        log_info "验证 Redis 连接: ${redis_host}:${REDIS_PORT:-6379}"
+        if ! wait_for_service "$redis_host" "${REDIS_PORT:-6379}" 60 "Redis"; then
             log_error "无法连接到 Redis 服务"
             log_error "请检查:"
             log_error "  1. Redis 服务是否启动"
@@ -296,7 +351,7 @@ validate_external_services() {
             # 进一步验证 Redis 认证（使用 REDISCLI_AUTH 环境变量传递密码，不在命令行暴露）
             if command -v redis-cli &> /dev/null && [ -n "$REDIS_PASSWORD" ]; then
                 # 安全方式：使用 REDISCLI_AUTH 环境变量传递密码
-                if ! REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli -h "$REDIS_HOST" -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -q PONG; then
+                if ! REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli -h "$redis_host" -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -q PONG; then
                     log_warn "Redis 端口连通但认证可能失败，应用启动时将进行完整验证"
                 fi
             fi
