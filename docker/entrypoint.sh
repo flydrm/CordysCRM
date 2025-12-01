@@ -475,9 +475,6 @@ main() {
     # 应用环境变量配置
     apply_env_config
     
-    # 验证外部服务连接
-    validate_external_services
-    
     # 启动应用
     start_application
 }
