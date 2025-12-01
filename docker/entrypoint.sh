@@ -25,45 +25,6 @@ log_error() {
 }
 
 # ============================================================================
-# 等待服务就绪（使用 nc 作为主要检测方式，更可靠）
-# ============================================================================
-wait_for_service() {
-    local host=$1
-    local port=$2
-    local timeout=${3:-60}
-    local service_name=${4:-"服务"}
-    local start_time=$(date +%s)
-    
-    log_info "等待 ${service_name} (${host}:${port}) 就绪..."
-    
-    while true; do
-        local current_time=$(date +%s)
-        local elapsed=$((current_time - start_time))
-        
-        if [ $elapsed -ge $timeout ]; then
-            log_error "等待 ${service_name} (${host}:${port}) 超时 (${timeout}s)"
-            return 1
-        fi
-        
-        # 方法1：使用 nc (netcat) - 最可靠的方式
-        if nc -z -w 2 "$host" "$port" 2>/dev/null; then
-            log_info "${service_name} (${host}:${port}) 已就绪 (耗时 ${elapsed}s)"
-            return 0
-        fi
-        
-        # 方法2：使用 curl（适用于 HTTP 服务）
-        if [ "$port" = "8081" ] || [ "$port" = "8082" ]; then
-            if curl -sf --connect-timeout 2 "http://${host}:${port}/actuator/health" >/dev/null 2>&1; then
-                log_info "${service_name} (${host}:${port}) 已就绪 (耗时 ${elapsed}s)"
-                return 0
-            fi
-        fi
-        
-        sleep 2
-    done
-}
-
-# ============================================================================
 # 初始化配置目录
 # ============================================================================
 init_config() {
@@ -306,66 +267,6 @@ apply_env_config() {
     fi
     
     log_info "环境变量配置应用完成"
-}
-
-# ============================================================================
-# 验证外部服务连接
-# ============================================================================
-validate_external_services() {
-    local has_error=0
-    
-    # 验证 MySQL 连接
-    if [ -n "$MYSQL_HOST" ]; then
-        log_info "验证 MySQL 连接: ${MYSQL_HOST}:${MYSQL_PORT:-3306}"
-        if ! wait_for_service "$MYSQL_HOST" "${MYSQL_PORT:-3306}" 120 "MySQL"; then
-            log_error "无法连接到 MySQL 服务"
-            log_error "请检查:"
-            log_error "  1. MySQL 服务是否启动"
-            log_error "  2. 网络连通性"
-            log_error "  3. 防火墙是否开放端口"
-            has_error=1
-        else
-            # 进一步验证 MySQL 认证（使用环境变量传递密码，不在命令行暴露）
-            if command -v mysql &> /dev/null; then
-                # 安全方式：使用 MYSQL_PWD 环境变量传递密码，避免命令行暴露
-                if ! MYSQL_PWD="${MYSQL_PASSWORD}" mysql -h "$MYSQL_HOST" -P "${MYSQL_PORT:-3306}" -u "${MYSQL_USERNAME:-root}" -e "SELECT 1" &>/dev/null; then
-                    log_warn "MySQL 端口连通但认证可能失败，应用启动时将进行完整验证"
-                fi
-            fi
-        fi
-    fi
-    
-    # 验证 Redis 连接
-    if [ -n "$REDIS_HOST" ]; then
-        # 剥离协议前缀，避免 nc 解析失败
-        local redis_host="${REDIS_HOST#*://}"
-        log_info "验证 Redis 连接: ${redis_host}:${REDIS_PORT:-6379}"
-        if ! wait_for_service "$redis_host" "${REDIS_PORT:-6379}" 60 "Redis"; then
-            log_error "无法连接到 Redis 服务"
-            log_error "请检查:"
-            log_error "  1. Redis 服务是否启动"
-            log_error "  2. 网络连通性"
-            log_error "  3. 防火墙是否开放端口"
-            has_error=1
-        else
-            # 进一步验证 Redis 认证（使用 REDISCLI_AUTH 环境变量传递密码，不在命令行暴露）
-            if command -v redis-cli &> /dev/null && [ -n "$REDIS_PASSWORD" ]; then
-                # 安全方式：使用 REDISCLI_AUTH 环境变量传递密码
-                if ! REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli -h "$redis_host" -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -q PONG; then
-                    log_warn "Redis 端口连通但认证可能失败，应用启动时将进行完整验证"
-                fi
-            fi
-        fi
-    fi
-    
-    if [ $has_error -eq 1 ]; then
-        log_error "=========================================="
-        log_error "外部服务验证失败，容器无法启动"
-        log_error "=========================================="
-        exit 1
-    fi
-    
-    log_info "外部服务验证通过"
 }
 
 # ============================================================================
