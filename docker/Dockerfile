@@ -120,7 +120,8 @@ COPY --from=build ${DEPENDENCY}/META-INF /app/META-INF
 COPY --from=build ${DEPENDENCY}/BOOT-INF/classes /app
 COPY --from=build /build/backend/${MODULE}/src/main/resources/static /app/static
 # 备份原始 Spring Boot 可执行包，便于回退使用 -jar 方式（使用通配符覆盖所有产物）
-COPY --from=build /build/backend/${MODULE}/target/*.jar /app/app.jar
+# 仅匹配重打包后的主 JAR，排除 *.jar.original
+COPY --from=build /build/backend/${MODULE}/target/app-*.jar /app/app.jar
 
 # 复制配置和启动脚本
 COPY installer/shells /shells
