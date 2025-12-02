@@ -58,7 +58,8 @@ COPY --from=frontend /frontend/packages/mobile/dist /build/frontend/packages/mob
 
 # 构建后端应用（排除 frontend 模块，因为前端已经单独构建）
 RUN chmod +x mvnw && \
-    ./mvnw clean package -DskipTests -pl '!frontend' -Dmaven.repo.local=/root/.m2/repository && \
+    ./mvnw clean package -DskipTests -pl backend/app -am -Dmaven.repo.local=/root/.m2/repository && \
+    ls -l backend/app/target/*.jar && \
     mkdir -p backend/app/target/dependency && \
     cd backend/app/target/dependency && \
     jar -xf ../*.jar && \
