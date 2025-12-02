@@ -22,7 +22,7 @@ on:
         default: 'latest'
 
 env:
-  IMAGE_REPO: ghcr.io/${{ github.repository }}
+  IMAGE_REPO: ${{ format('ghcr.io/{0}', toLower(github.repository)) }}
 
 jobs:
   build:
