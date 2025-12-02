@@ -172,6 +172,11 @@ jobs:
           - [Docker 配置](https://github.com/${{ github.repository }}/tree/main/docker)
           EOF
 
+      # 验证镜像内包含可执行 JAR
+      - name: ✅ Verify app.jar exists in image
+        run: |
+          docker run --rm ${{ env.IMAGE_REPO }}:${{ steps.version.outputs.version }} ls -l /app/app.jar
+
   # Release 时创建离线安装包
   release:
     runs-on: ubuntu-latest
