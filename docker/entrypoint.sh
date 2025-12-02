@@ -329,6 +329,7 @@ start_application() {
         # 优先使用官方 Spring Boot 可执行包，避免类路径不全导致的 CNF
         java_cmd="${java_cmd} -jar /app/app.jar"
     else
+        log_warn "未找到 /app/app.jar，回退到类路径模式（可能导致类缺失，请检查镜像构建产物）"
         # 回退到类路径模式
         java_cmd="${java_cmd} -cp ${JAVA_CLASSPATH:-/app:/app/lib/*} ${JAVA_MAIN_CLASS:-cn.cordys.Application}"
     fi
