@@ -321,12 +321,18 @@ start_application() {
     
     export CRM_VERSION=$(cat /tmp/CRM_VERSION 2>/dev/null || echo "main")
     
-    # 构建 Java 命令
     local java_cmd="java"
     java_cmd="${java_cmd} ${JAVA_OPTIONS:-}"
     java_cmd="${java_cmd} ${JAVA_OPTS:-}"
-    java_cmd="${java_cmd} -cp ${JAVA_CLASSPATH:-/app:/app/lib/*}"
-    java_cmd="${java_cmd} ${JAVA_MAIN_CLASS:-cn.cordys.Application}"
+    
+    if [ -f "/app/app.jar" ]; then
+        # 优先使用官方 Spring Boot 可执行包，避免类路径不全导致的 CNF
+        java_cmd="${java_cmd} -jar /app/app.jar"
+    else
+        # 回退到类路径模式
+        java_cmd="${java_cmd} -cp ${JAVA_CLASSPATH:-/app:/app/lib/*} ${JAVA_MAIN_CLASS:-cn.cordys.Application}"
+    fi
+    
     java_cmd="${java_cmd} --spring.config.additional-location=file:/opt/cordys/conf/"
     
     log_info "执行命令: ${java_cmd}"
