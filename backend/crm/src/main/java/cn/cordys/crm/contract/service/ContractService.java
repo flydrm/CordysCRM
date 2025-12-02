@@ -28,6 +28,7 @@ import cn.cordys.crm.contract.dto.response.ContractListResponse;
 import cn.cordys.crm.contract.dto.response.ContractResponse;
 import cn.cordys.crm.contract.mapper.ExtContractMapper;
 import cn.cordys.crm.customer.domain.Customer;
+import cn.cordys.crm.follow.dto.request.FollowUpPlanStatusRequest;
 import cn.cordys.crm.product.mapper.ExtProductMapper;
 import cn.cordys.crm.system.domain.Attachment;
 import cn.cordys.crm.system.domain.User;
@@ -121,7 +122,7 @@ public class ContractService {
         contractFieldService.saveModuleField(contract, orgId, operatorId, moduleFields, false);
         contractMapper.insert(contract);
 
-        baseService.handleAddLogWithSubTable(contract, moduleFields, "products", Translator.get("products_info"));
+        baseService.handleAddLogWithSubTable(contract, moduleFields, "products", Translator.get("products_info"), moduleFormConfigDTO);
 
         // 保存表单配置快照
         ContractResponse response = getContractResponse(contract, moduleFields, moduleFormConfigDTO);
@@ -230,7 +231,7 @@ public class ContractService {
             updateFields(moduleFields, contract, orgId, userId);
             contractMapper.update(contract);
             // 处理日志上下文
-            baseService.handleUpdateLogWithSubTable(oldContract, contract, originFields, moduleFields, request.getId(), contract.getName(), "products", Translator.get("products_info"));
+            baseService.handleUpdateLogWithSubTable(oldContract, contract, originFields, moduleFields, request.getId(), contract.getName(), "products", Translator.get("products_info"), moduleFormConfigDTO);
 
             //删除快照
             LambdaQueryWrapper<ContractSnapshot> delWrapper = new LambdaQueryWrapper<>();
@@ -485,5 +486,23 @@ public class ContractService {
     public ResourceTabEnableDTO getTabEnableConfig(String userId, String orgId) {
         List<RolePermissionDTO> rolePermissions = permissionCache.getRolePermissions(userId, orgId);
         return PermissionUtils.getTabEnableConfig(userId, PermissionConstants.CONTRACT_READ, rolePermissions);
+    }
+
+
+    /**
+     * 更新合同状态
+     * @param request
+     * @param userId
+     */
+    public void updateStatus(FollowUpPlanStatusRequest request, String userId) {
+        Contract contract = contractMapper.selectByPrimaryKey(request.getId());
+        if (contract == null) {
+            throw new GenericException(Translator.get("contract.not.exist"));
+        }
+
+        contract.setStatus(request.getStatus());
+        contract.setUpdateTime(System.currentTimeMillis());
+        contract.setUpdateUser(userId);
+        contractMapper.update(contract);
     }
 }
