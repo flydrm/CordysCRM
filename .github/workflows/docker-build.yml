@@ -176,7 +176,7 @@ jobs:
       - name: ✅ Verify app.jar exists in image
         run: |
           REPO_LC=$(echo "${IMAGE_REPO}" | tr '[:upper:]' '[:lower:]')
-          docker run --rm "${REPO_LC}@${{ steps.build.outputs.digest }}" ls -l /app/app.jar
+          docker run --rm --entrypoint /bin/sh "${REPO_LC}@${{ steps.build.outputs.digest }}" -c "ls -l /app/app.jar"
 
   # Release 时创建离线安装包
   release:
