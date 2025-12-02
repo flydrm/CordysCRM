@@ -22,7 +22,7 @@ on:
         default: 'latest'
 
 env:
-  IMAGE_REPO: ${{ format('ghcr.io/{0}', toLower(github.repository)) }}
+  IMAGE_REPO: ghcr.io/${{ github.repository }}
 
 jobs:
   build:
@@ -175,7 +175,8 @@ jobs:
       # 验证镜像内包含可执行 JAR
       - name: ✅ Verify app.jar exists in image
         run: |
-          docker run --rm ${{ env.IMAGE_REPO }}:${{ steps.version.outputs.version }} ls -l /app/app.jar
+          REPO_LC=$(echo "${IMAGE_REPO}" | tr '[:upper:]' '[:lower:]')
+          docker run --rm "${REPO_LC}:${{ steps.version.outputs.version }}" ls -l /app/app.jar
 
   # Release 时创建离线安装包
   release:
