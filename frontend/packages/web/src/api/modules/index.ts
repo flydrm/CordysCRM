@@ -387,6 +387,7 @@ export const {
   deleteContract,
   getContractFormConfig,
   getPaymentPlanList,
+  getContractPaymentPlanList,
   addPaymentPlan,
   updatePaymentPlan,
   deletePaymentPlan,
@@ -444,6 +445,7 @@ export const {
   getConfigSynchronization,
   testConfigSynchronization,
   updateConfigSynchronization,
+  getTenderConfig,
 } = businessApi;
 
 export const {

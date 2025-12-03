@@ -58,6 +58,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -319,11 +320,12 @@ public class ProductService {
      */
     public ImportResponse realImport(MultipartFile file, String currentOrg, String currentUser) {
         try {
+			AtomicLong initPos = new AtomicLong(getNextOrder(currentOrg));
             List<BaseField> fields = moduleFormService.getAllFields(FormKey.PRODUCT.getKey(), currentOrg);
             CustomImportAfterDoConsumer<Product, BaseResourceSubField> afterDo = (products, productFields, productFieldBlobs) -> {
                 List<LogDTO> logs = new ArrayList<>();
                 products.forEach(product -> {
-                    product.setPos(getNextOrder(currentOrg));
+                    product.setPos(initPos.getAndAdd(ServiceUtils.POS_STEP));
                     logs.add(new LogDTO(currentOrg, product.getId(), currentUser, LogType.ADD, LogModule.PRODUCT_MANAGEMENT, product.getName()));
                 });
                 productBaseMapper.batchInsert(products);
@@ -333,10 +335,10 @@ public class ProductService {
                 logService.batchAdd(logs);
             };
             CustomFieldImportEventListener<Product> eventListener = new CustomFieldImportEventListener<>(fields, Product.class, currentOrg, currentUser,
-                    "product_field", afterDo, 2000);
+                    "product_field", afterDo, 2000, null);
             FastExcelFactory.read(file.getInputStream(), eventListener).headRowNumber(1).ignoreEmptyRow(true).sheet().doRead();
             return ImportResponse.builder().errorMessages(eventListener.getErrList())
-                    .successCount(eventListener.getDataList().size()).failCount(eventListener.getErrList().size()).build();
+                    .successCount(eventListener.getSuccessCount()).failCount(eventListener.getErrList().size()).build();
         } catch (Exception e) {
             LogUtils.error("product import error: {}", e.getMessage());
             throw new GenericException(e.getMessage());

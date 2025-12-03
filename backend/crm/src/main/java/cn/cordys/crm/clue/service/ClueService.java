@@ -1089,10 +1089,10 @@ public class ClueService {
                 logService.batchAdd(logs);
             };
             CustomFieldImportEventListener<Clue> eventListener = new CustomFieldImportEventListener<>(fields, Clue.class, currentOrg, currentUser,
-                    "clue_field", afterDo, 2000);
+                    "clue_field", afterDo, 2000, null);
             FastExcelFactory.read(file.getInputStream(), eventListener).headRowNumber(1).ignoreEmptyRow(true).sheet().doRead();
             return ImportResponse.builder().errorMessages(eventListener.getErrList())
-                    .successCount(eventListener.getDataList().size()).failCount(eventListener.getErrList().size()).build();
+                    .successCount(eventListener.getSuccessCount()).failCount(eventListener.getErrList().size()).build();
         } catch (Exception e) {
             LogUtils.error("clue import error: ", e.getMessage());
             throw new GenericException(e.getMessage());
