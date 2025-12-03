@@ -123,7 +123,7 @@ write_mysql_ca() {
     # 如果直接提供了 PEM 内容，写入本地文件
     if [ -n "$MYSQL_SSL_CA" ]; then
         local ca_target="/opt/cordys/conf/mysql-ca.pem"
-        log_info "写入 MySQL CA 证书到 ${ca_target}"
+        log_info "写入 MySQL CA 证书到 ${ca_target}" >&2
         printf '%s\n' "$MYSQL_SSL_CA" > "$ca_target"
         echo "$ca_target"
         return
@@ -131,20 +131,20 @@ write_mysql_ca() {
 
     # 如果指定了路径且文件存在，直接返回该路径，不再复制
     if [ -n "$MYSQL_SSL_CA_PATH" ] && [ -f "$MYSQL_SSL_CA_PATH" ]; then
-        log_info "使用外部 MySQL CA 证书: ${MYSQL_SSL_CA_PATH}"
+        log_info "使用外部 MySQL CA 证书: ${MYSQL_SSL_CA_PATH}" >&2
         echo "$MYSQL_SSL_CA_PATH"
         return
     fi
 
     # 默认探测 /app/ca.txt 或 /app/ca.pem
     if [ -f "/app/ca.txt" ]; then
-        log_info "检测到默认 CA 文件: /app/ca.txt"
+        log_info "检测到默认 CA 文件: /app/ca.txt" >&2
         echo "/app/ca.txt"
         return
     fi
 
     if [ -f "/app/ca.pem" ]; then
-        log_info "检测到默认 CA 文件: /app/ca.pem"
+        log_info "检测到默认 CA 文件: /app/ca.pem" >&2
         echo "/app/ca.pem"
         return
     fi
